@@ -31,7 +31,6 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      // inside new BrowserWindow({ webPreferences: { ... } })
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
