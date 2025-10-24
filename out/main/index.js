@@ -31,9 +31,15 @@ async function createWindow() {
   win = new BrowserWindow({
     width: 1200,
     height: 800,
-    webPreferences: { preload: join(__dirname, "preload.js") }
+    webPreferences: {
+      preload: join(__dirname, "preload.mjs"),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
   });
-  if (process.env.ELECTRON_RENDERER_URL) {
+  win.webContents.openDevTools({ mode: "detach" });
+  const isDev = !!process.env.ELECTRON_RENDERER_URL;
+  if (isDev) {
     await win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     await win.loadFile(join(__dirname, "../renderer/index.html"));

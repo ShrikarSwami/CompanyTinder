@@ -5,10 +5,10 @@ import keytar from 'keytar'
 
 let win: BrowserWindow | null = null
 let db: Database.Database
-const SERVICE = 'CompanyTinder' // Keychain / Credential Manager service name
+const SERVICE = 'CompanyTinder'
 
 function initDB() {
-  const userData = app.getPath('userData') // OS-safe app data dir
+  const userData = app.getPath('userData')
   db = new Database(join(userData, 'app.db'))
   db.pragma('journal_mode = WAL')
   db.exec(`
@@ -30,11 +30,21 @@ async function createWindow() {
   win = new BrowserWindow({
     width: 1200,
     height: 800,
-    webPreferences: { preload: join(__dirname, 'preload.js') }
+    webPreferences: {
+      preload: join(__dirname, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
   })
-  if (process.env.ELECTRON_RENDERER_URL) {
-    await win.loadURL(process.env.ELECTRON_RENDERER_URL)
+
+  win.webContents.openDevTools({ mode: 'detach' })
+
+  const isDev = !!process.env.ELECTRON_RENDERER_URL
+  if (isDev) {
+    // Use Vite dev server URL
+    await win.loadURL(process.env.ELECTRON_RENDERER_URL!)
   } else {
+    // Use built HTML for production build
     await win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
