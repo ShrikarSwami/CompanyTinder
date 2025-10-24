@@ -67,30 +67,18 @@ function Setup({
     daily_cap: Number(initial?.daily_cap || 25)
   })
 
-  async function checkSaved() {
-    // read back settings from SQLite
-    const s = await window.api.getSettings()
-    // check if secrets exist in Keychain (we only check presence)
-    const id = await window.api.getSecret('GMAIL_CLIENT_ID')
-    const secret = await window.api.getSecret('GMAIL_CLIENT_SECRET')
-    const gkey = await window.api.getSecret('GOOGLE_API_KEY')
-
-    setVerify(s)
-    setSecretsOK({
-      gmailId: Boolean(id),
-      gmailSecret: Boolean(secret),
-      googleKey: Boolean(gkey),
-    })
-  }
-
-
   // Keys (stored in OS keychain)
   const [gmailClientId, setGmailClientId] = useState('')
   const [gmailClientSecret, setGmailClientSecret] = useState('')
   const [googleApiKey, setGoogleApiKey] = useState('')
-  const [verify, setVerify] = useState<any | null>(null)
-  const [secretsOK, setSecretsOK] = useState<{gmailId?: boolean; gmailSecret?: boolean; googleKey?: boolean}>({})
 
+  // Verification UI
+  const [verify, setVerify] = useState<any | null>(null)
+  const [secretsOK, setSecretsOK] = useState<{
+    gmailId?: boolean
+    gmailSecret?: boolean
+    googleKey?: boolean
+  }>({})
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -106,7 +94,24 @@ function Setup({
 
     setSaving(false)
     setSaved(true)
+    // proceed to Finder soon after save
     setTimeout(onDone, 500)
+  }
+
+  async function checkSaved() {
+    // Read back settings from SQLite
+    const s = await window.api.getSettings()
+    // Check if secrets exist in Keychain (presence only, never show values)
+    const id = await window.api.getSecret('GMAIL_CLIENT_ID')
+    const secret = await window.api.getSecret('GMAIL_CLIENT_SECRET')
+    const gkey = await window.api.getSecret('GOOGLE_API_KEY')
+
+    setVerify(s)
+    setSecretsOK({
+      gmailId: Boolean(id),
+      gmailSecret: Boolean(secret),
+      googleKey: Boolean(gkey)
+    })
   }
 
   return (
@@ -123,7 +128,9 @@ function Setup({
         <Field
           label="Daily send cap"
           value={String(form.daily_cap)}
-          onChange={(v) => setForm({ ...form, daily_cap: Number(v.replace(/\D/g, '') || 0) })}
+          onChange={(v) =>
+            setForm({ ...form, daily_cap: Number(v.replace(/\D/g, '') || 0) })
+          }
         />
       </Section>
 
@@ -140,8 +147,27 @@ function Setup({
         <button disabled={saving} onClick={handleSave}>
           {saving ? 'Saving…' : 'Save & Continue'}
         </button>
+        <button onClick={checkSaved}>Check saved</button>
         {saved && <span style={{ color: '#22c55e' }}>Saved!</span>}
       </div>
+
+      {/* Verification panel */}
+      {verify && (
+        <div style={{ marginTop: 16, padding: 12, border: '1px solid #333', borderRadius: 8 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Verification</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+            (Shows what’s stored in SQLite and whether secrets exist in the Keychain.)
+          </div>
+          <pre style={{ background: '#111', padding: 8, borderRadius: 6, overflowX: 'auto' }}>
+            {JSON.stringify(verify, null, 2)}
+          </pre>
+          <div style={{ marginTop: 8 }}>
+            Gmail Client ID: {secretsOK.gmailId ? '✔︎' : '✖︎'} &nbsp;|&nbsp;
+            Gmail Client Secret: {secretsOK.gmailSecret ? '✔︎' : '✖︎'} &nbsp;|&nbsp;
+            Google API Key: {secretsOK.googleKey ? '✔︎' : '✖︎'}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
