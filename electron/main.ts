@@ -1,3 +1,4 @@
+// electron/main.ts
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import Database from 'better-sqlite3'
@@ -5,7 +6,7 @@ import keytar from 'keytar'
 
 let win: BrowserWindow | null = null
 let db: Database.Database
-const SERVICE = 'CompanyTinder'
+const SERVICE = 'CompanyTinder' // keychain service name
 
 function initDB() {
   const userData = app.getPath('userData')
@@ -31,10 +32,10 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+      preload: join(__dirname, 'preload.mjs'),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   })
 
   // open DevTools so we can see renderer logs
@@ -54,7 +55,9 @@ async function createWindow() {
 ipcMain.handle('settings:get', () => {
   return db.prepare('SELECT * FROM settings WHERE id=1').get()
 })
+
 ipcMain.handle('settings:update', (_e, payload: any) => {
+  console.log('[settings:update]', payload)
   db.prepare(`
     UPDATE settings SET
       sender_name=@sender_name,
@@ -71,17 +74,32 @@ ipcMain.handle('settings:update', (_e, payload: any) => {
 
 /* ---- IPC: Secrets (Keytar) ---- */
 ipcMain.handle('secrets:set', async (_e, { key, value }) => {
-  await keytar.setPassword(SERVICE, key, value)
-  return { ok: true }
+  try {
+    await keytar.setPassword(SERVICE, key, value)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('[secrets:set] failed:', err?.message || err)
+    return { ok: false, error: String(err?.message || err) }
+  }
 })
+
 ipcMain.handle('secrets:get', async (_e, key: string) => {
-  const v = await keytar.getPassword(SERVICE, key)
-  return v || null
+  try {
+    const v = await keytar.getPassword(SERVICE, key)
+    return v || null
+  } catch (err: any) {
+    console.error('[secrets:get] failed:', err?.message || err)
+    return null
+  }
 })
 
 app.whenReady().then(() => {
   initDB()
   createWindow()
 })
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+})

@@ -41,7 +41,6 @@ export default function App() {
     return <Setup initial={settings as any} onDone={() => setStep('finder')} />
   }
 
-  // Finder placeholder (we wire this later)
   return (
     <div style={{ padding: 24, fontFamily: 'ui-sans-serif, system-ui' }}>
       <h2>Finder</h2>
@@ -67,51 +66,62 @@ function Setup({
     daily_cap: Number(initial?.daily_cap || 25)
   })
 
-  // Keys (stored in OS keychain)
   const [gmailClientId, setGmailClientId] = useState('')
   const [gmailClientSecret, setGmailClientSecret] = useState('')
   const [googleApiKey, setGoogleApiKey] = useState('')
 
-  // Verification UI
-  const [verify, setVerify] = useState<any | null>(null)
-  const [secretsOK, setSecretsOK] = useState<{
-    gmailId?: boolean
-    gmailSecret?: boolean
-    googleKey?: boolean
-  }>({})
-
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [skipSecrets, setSkipSecrets] = useState(false)
 
-  async function handleSave() {
-    setSaving(true)
-    setSaved(false)
-
-    await window.api.updateSettings(form)
-    if (gmailClientId) await window.api.setSecret('GMAIL_CLIENT_ID', gmailClientId)
-    if (gmailClientSecret) await window.api.setSecret('GMAIL_CLIENT_SECRET', gmailClientSecret)
-    if (googleApiKey) await window.api.setSecret('GOOGLE_API_KEY', googleApiKey)
-
-    setSaving(false)
-    setSaved(true)
-    // proceed to Finder soon after save
-    setTimeout(onDone, 500)
-  }
+  const [verify, setVerify] = useState<any | null>(null)
+  const [secretsOK, setSecretsOK] = useState<{ gmailId?: boolean; gmailSecret?: boolean; googleKey?: boolean }>({})
 
   async function checkSaved() {
-    // Read back settings from SQLite
     const s = await window.api.getSettings()
-    // Check if secrets exist in Keychain (presence only, never show values)
     const id = await window.api.getSecret('GMAIL_CLIENT_ID')
     const secret = await window.api.getSecret('GMAIL_CLIENT_SECRET')
     const gkey = await window.api.getSecret('GOOGLE_API_KEY')
-
     setVerify(s)
     setSecretsOK({
       gmailId: Boolean(id),
       gmailSecret: Boolean(secret),
-      googleKey: Boolean(gkey)
+      googleKey: Boolean(gkey),
     })
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    setError(null)
+    try {
+      const res = await window.api.updateSettings(form)
+      if (!res?.ok) throw new Error('settings update failed')
+
+      if (!skipSecrets) {
+        if (gmailClientId) {
+          const r = await window.api.setSecret('GMAIL_CLIENT_ID', gmailClientId)
+          if (!r?.ok) throw new Error('failed to save Gmail Client ID')
+        }
+        if (gmailClientSecret) {
+          const r = await window.api.setSecret('GMAIL_CLIENT_SECRET', gmailClientSecret)
+          if (!r?.ok) throw new Error('failed to save Gmail Client Secret')
+        }
+        if (googleApiKey) {
+          const r = await window.api.setSecret('GOOGLE_API_KEY', googleApiKey)
+          if (!r?.ok) throw new Error('failed to save Google API Key')
+        }
+      }
+
+      setSaved(true)
+      setTimeout(onDone, 400)
+    } catch (e: any) {
+      console.error('Save failed', e)
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -128,13 +138,15 @@ function Setup({
         <Field
           label="Daily send cap"
           value={String(form.daily_cap)}
-          onChange={(v) =>
-            setForm({ ...form, daily_cap: Number(v.replace(/\D/g, '') || 0) })
-          }
+          onChange={(v) => setForm({ ...form, daily_cap: Number(v.replace(/\D/g, '') || 0) })}
         />
       </Section>
 
       <Section title="Keys (stored in system keychain)">
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <input type="checkbox" checked={skipSecrets} onChange={(e) => setSkipSecrets(e.target.checked)} />
+          <span>Skip saving secrets for now</span>
+        </label>
         <Field label="Gmail OAuth Client ID" value={gmailClientId} onChange={setGmailClientId} />
         <Field label="Gmail OAuth Client Secret" value={gmailClientSecret} onChange={setGmailClientSecret} type="password" />
         <Field label="Google API Key (search)" value={googleApiKey} onChange={setGoogleApiKey} />
@@ -143,29 +155,19 @@ function Setup({
         </small>
       </Section>
 
-      <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+      <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
         <button disabled={saving} onClick={handleSave}>
           {saving ? 'Saving…' : 'Save & Continue'}
         </button>
-        <button onClick={checkSaved}>Check saved</button>
+        <button onClick={checkSaved}>Check Saved</button>
         {saved && <span style={{ color: '#22c55e' }}>Saved!</span>}
+        {error && <span style={{ color: '#ef4444' }}>Error: {error}</span>}
       </div>
 
-      {/* Verification panel */}
       {verify && (
-        <div style={{ marginTop: 16, padding: 12, border: '1px solid #333', borderRadius: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Verification</div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
-            (Shows what’s stored in SQLite and whether secrets exist in the Keychain.)
-          </div>
-          <pre style={{ background: '#111', padding: 8, borderRadius: 6, overflowX: 'auto' }}>
-            {JSON.stringify(verify, null, 2)}
-          </pre>
-          <div style={{ marginTop: 8 }}>
-            Gmail Client ID: {secretsOK.gmailId ? '✔︎' : '✖︎'} &nbsp;|&nbsp;
-            Gmail Client Secret: {secretsOK.gmailSecret ? '✔︎' : '✖︎'} &nbsp;|&nbsp;
-            Google API Key: {secretsOK.googleKey ? '✔︎' : '✖︎'}
-          </div>
+        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.9 }}>
+          <div><b>Settings</b>: {JSON.stringify(verify)}</div>
+          <div><b>Secrets</b>: {JSON.stringify(secretsOK)}</div>
         </div>
       )}
     </div>
