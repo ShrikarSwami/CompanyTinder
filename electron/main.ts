@@ -39,12 +39,16 @@ async function createWindow() {
 
   win.webContents.openDevTools({ mode: 'detach' })
 
-  const isDev = !!process.env.ELECTRON_RENDERER_URL
-  if (isDev) {
-    // Use Vite dev server URL
-    await win.loadURL(process.env.ELECTRON_RENDERER_URL!)
-  } else {
-    // Use built HTML for production build
+  const devUrl =
+    process.env.ELECTRON_RENDERER_URL ||
+    process.env.VITE_DEV_SERVER_URL ||
+    'http://localhost:5173'
+
+  try {
+    // Try dev server first
+    await win.loadURL(devUrl)
+  } catch {
+    // Fallback to built file (prod)
     await win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }

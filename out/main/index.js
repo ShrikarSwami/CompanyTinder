@@ -38,10 +38,10 @@ async function createWindow() {
     }
   });
   win.webContents.openDevTools({ mode: "detach" });
-  const isDev = !!process.env.ELECTRON_RENDERER_URL;
-  if (isDev) {
-    await win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
+  const devUrl = process.env.ELECTRON_RENDERER_URL || process.env.VITE_DEV_SERVER_URL || "http://localhost:5173";
+  try {
+    await win.loadURL(devUrl);
+  } catch {
     await win.loadFile(join(__dirname, "../renderer/index.html"));
   }
 }
