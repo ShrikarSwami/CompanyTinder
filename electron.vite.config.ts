@@ -21,5 +21,12 @@ export default defineConfig({
       }
     }
   },
-  renderer: {}
+  renderer: {
+    build: {
+      rollupOptions: {
+        // use your existing Vite root HTML
+        input: resolve(__dirname, 'index.html')
+      }
+    }
+  }
 })
