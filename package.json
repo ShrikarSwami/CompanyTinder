@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
+
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -11,6 +12,7 @@
     "pack": "electron-builder --dir",
     "make": "electron-builder -mwl"
   },
+
   "dependencies": {
     "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
@@ -18,6 +20,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
+
   "devDependencies": {
     "@types/react": "^18.3.26",
     "@types/react-dom": "^18.3.7",
@@ -31,6 +34,7 @@
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^0.14.6"
   },
+
   "build": {
     "appId": "ai.shrikar.companytinder",
     "productName": "CompanyTinder",
@@ -42,24 +46,8 @@
       "LICENSE",
       "package.json"
     ],
-    "mac": {
-      "category": "public.app-category.productivity",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "zip"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "zip"
-      ]
-    }
+    "mac": { "category": "public.app-category.productivity", "target": ["dmg", "zip"] },
+    "win": { "target": ["nsis", "zip"] },
+    "linux": { "target": ["AppImage", "zip"] }
   }
 }
