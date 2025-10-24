@@ -31,24 +31,22 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
+      // inside new BrowserWindow({ webPreferences: { ... } })
       preload: join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
   })
 
+  // open DevTools so we can see renderer logs
   win.webContents.openDevTools({ mode: 'detach' })
 
-  const devUrl =
-    process.env.ELECTRON_RENDERER_URL ||
-    process.env.VITE_DEV_SERVER_URL ||
-    'http://localhost:5173'
-
-  try {
-    // Try dev server first
+  // In dev, always load the Vite dev server
+  const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
+  if (devUrl) {
     await win.loadURL(devUrl)
-  } catch {
-    // Fallback to built file (prod)
+  } else {
+    // prod build fallback
     await win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
