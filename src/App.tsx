@@ -1,26 +1,5 @@
 import { useEffect, useState } from 'react'
-
-type Settings = {
-  sender_name: string
-  sender_email: string
-  school: string
-  program: string
-  city: string
-  bcc_list: string
-  daily_cap: number
-}
-
-// bridge type coming from preload
-declare global {
-  interface Window {
-    api?: {
-      getSettings: () => Promise<Settings>
-      updateSettings: (payload: Settings) => Promise<{ ok: boolean }>
-      setSecret: (key: string, value: string) => Promise<{ ok: boolean }>
-      getSecret: (key: string) => Promise<string | null>
-    }
-  }
-}
+import type { Settings } from './types'
 
 export default function App() {
   const [step, setStep] = useState<'welcome' | 'setup' | 'finder'>('welcome')
@@ -29,14 +8,14 @@ export default function App() {
 
   useEffect(() => {
     const api = window.api
-    setHasApi(Boolean(api))
-    if (!api) {
-      console.warn('[CompanyTinder] window.api not available yet; UI will still render.')
-      return
+    setHasApi(!!api)
+    if (api) {
+      api.getSettings().then(setSettings).catch(err => {
+        console.error('[CompanyTinder] getSettings failed:', err)
+      })
+    } else {
+      console.warn('[CompanyTinder] window.api not available yet (preload)')
     }
-    api.getSettings()
-      .then((s) => setSettings(s))
-      .catch((err) => console.error('[CompanyTinder] getSettings failed:', err))
   }, [])
 
   if (step === 'welcome') {
@@ -55,8 +34,7 @@ export default function App() {
 
         {!hasApi && (
           <div style={{ marginTop: 12, color: '#f59e0b' }}>
-            ⚠️ Preload bridge (window.api) not detected yet. You can still open Setup; data won’t
-            persist until the preload is available. Check DevTools Console for errors.
+            ⚠️ Preload bridge (window.api) not detected yet. You can still open Setup; data won’t persist until preload is available.
           </div>
         )}
 
@@ -69,7 +47,7 @@ export default function App() {
   }
 
   if (step === 'setup') {
-    return <Setup initial={settings ?? ({} as Partial<Settings>)} onDone={() => setStep('finder')} />
+    return <Setup initial={settings ?? ({} as any)} onDone={() => setStep('finder')} />
   }
 
   return (
@@ -80,51 +58,39 @@ export default function App() {
   )
 }
 
-function Setup({
-  initial,
-  onDone
-}: {
-  initial: Partial<Settings>
-  onDone: () => void
-}) {
+function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => void }) {
   const [form, setForm] = useState<Settings>({
-    sender_name: initial.sender_name ?? '',
-    sender_email: initial.sender_email ?? '',
-    school: initial.school ?? '',
-    program: initial.program ?? '',
-    city: initial.city ?? '',
-    bcc_list: initial.bcc_list ?? '',
-    daily_cap: Number(initial.daily_cap ?? 25),
+    sender_name: initial.sender_name || '',
+    sender_email: initial.sender_email || '',
+    school: initial.school || '',
+    program: initial.program || '',
+    city: initial.city || '',
+    bcc_list: initial.bcc_list || '',
+    daily_cap: Number(initial.daily_cap || 25),
   })
 
-  // secrets UI
   const [gmailClientId, setGmailClientId] = useState('')
   const [gmailClientSecret, setGmailClientSecret] = useState('')
   const [googleApiKey, setGoogleApiKey] = useState('')
-
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   async function handleSave() {
-    setSaving(true)
-    setSaved(false)
+    setSaving(true); setSaved(false)
     try {
-      const api = window.api
-      if (!api) {
+      if (!window.api) {
         console.warn('[CompanyTinder] Save skipped — window.api not available.')
-        setSaved(true)
-        setTimeout(onDone, 400)
+        setSaved(true); setTimeout(onDone, 400)
         return
       }
-      await api.updateSettings(form)
-      if (gmailClientId) await api.setSecret('GMAIL_CLIENT_ID', gmailClientId)
-      if (gmailClientSecret) await api.setSecret('GMAIL_CLIENT_SECRET', gmailClientSecret)
-      if (googleApiKey) await api.setSecret('GOOGLE_API_KEY', googleApiKey)
-      setSaved(true)
-      setTimeout(onDone, 400)
+      await window.api.updateSettings(form)
+      if (gmailClientId) await window.api.setSecret('GMAIL_CLIENT_ID', gmailClientId)
+      if (gmailClientSecret) await window.api.setSecret('GMAIL_CLIENT_SECRET', gmailClientSecret)
+      if (googleApiKey) await window.api.setSecret('GOOGLE_API_KEY', googleApiKey)
+      setSaved(true); setTimeout(onDone, 400)
     } catch (err) {
       console.error('[CompanyTinder] handleSave failed:', err)
-      alert('Save failed. See Console for details.')
+      alert('Save failed. Check DevTools Console for details.')
     } finally {
       setSaving(false)
     }
@@ -184,16 +150,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  type = 'text'
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  type?: string
+function Field({ label, value, onChange, type = 'text' }:{
+  label: string; value: string; onChange:(v: string)=>void; type?: string
 }) {
   return (
     <label style={{ display: 'grid', gap: 4 }}>

@@ -1,35 +1,32 @@
 {
   "name": "companytinder",
-  "private": true,
   "version": "0.1.0",
-  "main": "dist-electron/main.js",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
-    "dev:main": "tsc -w -p tsconfig.node.json",
+    "dev": "concurrently -n main,renderer,electron -c cyan,green,yellow \"pnpm:dev:main\" \"pnpm:dev:renderer\" \"pnpm:dev:electron\"",
+    "dev:main": "tsc -p tsconfig.node.json -w",
     "dev:renderer": "vite",
-    "dev:electron": "wait-on http://localhost:5173 && electron .",
-    "dev": "concurrently -k \"pnpm:dev:*\"",
-    "build": "tsc -p tsconfig.node.json && vite build",
-    "start": "electron .",
-    "rebuild:native": "pnpm exec @electron/rebuild -f -w better-sqlite3 -w keytar --version=38.4.0"
+    "dev:electron": "wait-on tcp:5173 file:dist-electron/electron/main.js && electron .",
+    "build": "vite build && tsc -p tsconfig.node.json",
+    "rebuild:native": "electron-rebuild -f"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "keytar": "^7.9.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.6.1",
-    "@types/better-sqlite3": "^7.6.11",
-    "@types/node": "^22.18.12",
-    "@types/react": "^18.3.26",
-    "@types/react-dom": "^18.3.7",
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^9.2.1",
     "electron": "^38.4.0",
     "electron-builder": "^24.13.3",
-    "eslint": "^8.57.1",
+    "electron-rebuild": "^3.7.2",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "wait-on": "^9.0.1"
