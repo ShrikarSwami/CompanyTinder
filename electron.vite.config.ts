@@ -2,7 +2,6 @@ import { defineConfig } from 'electron-vite'
 import { resolve } from 'node:path'
 import { builtinModules } from 'node:module'
 
-// keep native modules external
 const externals = [
   'keytar',
   'better-sqlite3',
@@ -11,27 +10,31 @@ const externals = [
 ]
 
 export default defineConfig({
-  // Main process -> produces dist-electron/main.js in dev
+  // Main -> dist-electron/main.js
   main: {
-    entry: 'electron/main.ts',
-    vite: {
-      build: {
-        rollupOptions: { external: externals }
-      }
+    build: {
+      lib: {
+        entry: 'electron/main.ts',
+        formats: ['cjs'],
+        fileName: () => 'main'
+      },
+      rollupOptions: { external: externals, output: { entryFileNames: 'main.js' } }
     }
   },
 
-  // Preload -> produces dist-electron/preload.mjs in dev
+  // Preload -> dist-electron/preload.mjs
   preload: {
-    input: { index: 'electron/preload.ts' },
-    vite: {
-      build: {
-        rollupOptions: { external: externals }
-      }
+    build: {
+      lib: {
+        entry: { index: 'electron/preload.ts' },
+        formats: ['es'],
+        fileName: () => 'preload'
+      },
+      rollupOptions: { external: externals, output: { entryFileNames: 'preload.mjs' } }
     }
   },
 
-  // Renderer uses your root index.html
+  // Tell electron-vite to use your ROOT index.html (not src/renderer)
   renderer: {
     build: {
       rollupOptions: {
