@@ -103,7 +103,8 @@ function newOAuth2(clientId: string, clientSecret: string, redirectUri: string) 
 async function fetchGmailProfile(oauth2: InstanceType<typeof google.auth.OAuth2>) {
   const gmail = google.gmail({ version: 'v1', auth: oauth2 })
   const res = await gmail.users.getProfile({ userId: 'me' })
-  return res.data.emailAddress
+  // coerce null -> undefined so callers only see string | undefined
+  return res.data.emailAddress ?? undefined
 }
 
 /* ---------------------- IPC: Gmail ------------------------- */
@@ -123,7 +124,7 @@ ipcMain.handle('gmail:status', async () => {
     oauth2.setCredentials(tokens)
 
     const email = await fetchGmailProfile(oauth2)
-    return { connected: true, email }
+    return { connected: true, email: email ?? undefined }
   } catch (err: any) {
     console.warn('[gmail:status] failed:', err?.message || err)
     return { connected: false, error: String(err?.message || err) }
@@ -175,8 +176,9 @@ ipcMain.handle('gmail:connect', async () => {
           // Persist tokens
           await keytar.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens))
 
-          // Confirm account
-          const email = await fetchGmailProfile(oauth2)
+          // inside ipcMain.handle('gmail:connect', ...) right before resolve()
+          const email = (await fetchGmailProfile(oauth2)) ?? undefined
+          resolve({ ok: true, email })
 
           // Nice success page
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
@@ -203,6 +205,7 @@ ipcMain.handle('gmail:connect', async () => {
       open(authUrl).catch((e) => {
         console.error('Failed to open browser:', e)
         shell.openExternal(authUrl).catch(() => {})
+
       })
     })
   })

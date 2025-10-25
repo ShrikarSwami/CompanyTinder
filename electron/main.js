@@ -88,7 +88,8 @@ function newOAuth2(clientId, clientSecret, redirectUri) {
 async function fetchGmailProfile(oauth2) {
     const gmail = googleapis_1.google.gmail({ version: 'v1', auth: oauth2 });
     const res = await gmail.users.getProfile({ userId: 'me' });
-    return res.data.emailAddress;
+    // coerce null -> undefined so callers only see string | undefined
+    return res.data.emailAddress ?? undefined;
 }
 /* ---------------------- IPC: Gmail ------------------------- */
 /** Return connection status + email (if tokens exist & are valid) */
@@ -105,7 +106,7 @@ electron_1.ipcMain.handle('gmail:status', async () => {
         const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1'); // dummy
         oauth2.setCredentials(tokens);
         const email = await fetchGmailProfile(oauth2);
-        return { connected: true, email };
+        return { connected: true, email: email ?? undefined };
     }
     catch (err) {
         console.warn('[gmail:status] failed:', err?.message || err);
@@ -152,8 +153,9 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
                     oauth2.setCredentials(tokens);
                     // Persist tokens
                     await keytar_1.default.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens));
-                    // Confirm account
-                    const email = await fetchGmailProfile(oauth2);
+                    // inside ipcMain.handle('gmail:connect', ...) right before resolve()
+                    const email = (await fetchGmailProfile(oauth2)) ?? undefined;
+                    resolve({ ok: true, email });
                     // Nice success page
                     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                     res.end(`<html><body style="font-family: ui-sans-serif; padding: 24px">
