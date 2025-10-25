@@ -1,11 +1,13 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
-import { createServer } from 'http'
-import { randomUUID } from 'crypto'
+import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import Database from 'better-sqlite3'
 import keytar from 'keytar'
+import open from 'open'
 import getPort from 'get-port'
 import { google } from 'googleapis'
+
 
 let win: BrowserWindow | null = null
 let db: Database.Database
@@ -185,4 +187,20 @@ app.on('window-all-closed', () => {
 })
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
+})
+
+
+
+ipcMain.handle('gmail:status', async () => { /* ... */ })
+ipcMain.handle('gmail:connect', async () => { /* ... */ })
+ipcMain.handle('settings:get', /* ... */)
+ipcMain.handle('settings:update', /* ... */)
+ipcMain.handle('secrets:set', async (_e, { key, value }: { key: string; value: string }) => {
+  await keytar.setPassword(SERVICE, key, value)
+  return { ok: true }
+})
+
+ipcMain.handle('secrets:get', async (_e, key: string) => {
+  const v = await keytar.getPassword(SERVICE, key)
+  return v || null
 })

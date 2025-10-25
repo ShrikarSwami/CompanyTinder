@@ -5,8 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path_1 = require("path");
-const http_1 = require("http");
-const crypto_1 = require("crypto");
+const node_http_1 = require("node:http");
+const node_crypto_1 = require("node:crypto");
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const keytar_1 = __importDefault(require("keytar"));
 const get_port_1 = __importDefault(require("get-port"));
@@ -112,7 +112,7 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
         'email',
         'profile',
     ];
-    const state = (0, crypto_1.randomUUID)();
+    const state = (0, node_crypto_1.randomUUID)();
     const authUrl = auth.generateAuthUrl({
         access_type: 'offline',
         scope: scopes,
@@ -121,7 +121,7 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
     });
     await electron_1.shell.openExternal(authUrl);
     return await new Promise((resolve, reject) => {
-        const server = (0, http_1.createServer)(async (req, res) => {
+        const server = (0, node_http_1.createServer)(async (req, res) => {
             try {
                 if (!req.url)
                     return;
@@ -167,4 +167,16 @@ electron_1.app.on('window-all-closed', () => {
 electron_1.app.on('activate', () => {
     if (electron_1.BrowserWindow.getAllWindows().length === 0)
         createWindow();
+});
+electron_1.ipcMain.handle('gmail:status', async () => { });
+electron_1.ipcMain.handle('gmail:connect', async () => { });
+electron_1.ipcMain.handle('settings:get');
+electron_1.ipcMain.handle('settings:update');
+electron_1.ipcMain.handle('secrets:set', async (_e, { key, value }) => {
+    await keytar_1.default.setPassword(SERVICE, key, value);
+    return { ok: true };
+});
+electron_1.ipcMain.handle('secrets:get', async (_e, key) => {
+    const v = await keytar_1.default.getPassword(SERVICE, key);
+    return v || null;
 });
