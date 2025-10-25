@@ -1,12 +1,10 @@
-// electron/main.ts
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
-import http from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createServer } from 'http'
+import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import keytar from 'keytar'
 import getPort from 'get-port'
-import open from 'open'
 import { google } from 'googleapis'
 
 let win: BrowserWindow | null = null
@@ -49,13 +47,13 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      preload: join(__dirname, 'preload.js'),
     },
   })
 
-  // devtools visible in dev so you can test APIs from the Console
+  // devtools in dev so we can see Console logs
   win.webContents.openDevTools({ mode: 'detach' })
 
   const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
@@ -66,11 +64,12 @@ async function createWindow() {
   }
 }
 
-/* ----------------------------- Settings IPC ----------------------------- */
+/* -------------------- IPC: Settings + Secrets -------------------- */
 ipcMain.handle('settings:get', () => {
   return db.prepare('SELECT * FROM settings WHERE id=1').get()
 })
-ipcMain.handle('settings:update', (_e, payload: any) => {
+
+ipcMain.handle('settings:update', (_e, payload: Settings) => {
   db.prepare(`
     UPDATE settings SET
       sender_name=@sender_name,
@@ -85,119 +84,105 @@ ipcMain.handle('settings:update', (_e, payload: any) => {
   return { ok: true }
 })
 
-/* ------------------------------ Secrets IPC ----------------------------- */
-ipcMain.handle('secrets:set', async (_e, { key, value }) => {
+ipcMain.handle('secrets:set', async (_e, { key, value }: { key: string; value: string }) => {
   await keytar.setPassword(SERVICE, key, value)
   return { ok: true }
 })
+
 ipcMain.handle('secrets:get', async (_e, key: string) => {
   const v = await keytar.getPassword(SERVICE, key)
   return v || null
 })
 
-/* ------------------------------ Gmail OAuth ----------------------------- */
-// Read client id/secret from keychain keys you enter in Setup:
-//  - GMAIL_CLIENT_ID
-//  - GMAIL_CLIENT_SECRET
-async function getClientSecrets() {
+/* -------------------- IPC: Gmail OAuth -------------------- */
+ipcMain.handle('gmail:status', async () => {
+  const raw = await keytar.getPassword(SERVICE, TOKENS_KEY)
+  if (!raw) return { connected: false }
+
+  try {
+    const tokens = JSON.parse(raw)
+    const auth = new google.auth.OAuth2()
+    auth.setCredentials(tokens)
+    const gmail = google.gmail({ version: 'v1', auth })
+    const me = await gmail.users.getProfile({ userId: 'me' })
+    return { connected: true, email: me.data.emailAddress || null }
+  } catch (err: any) {
+    return { connected: false, error: String(err?.message || err) }
+  }
+})
+
+ipcMain.handle('gmail:connect', async () => {
   const clientId = await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_ID')
   const clientSecret = await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')
   if (!clientId || !clientSecret) {
-    throw new Error('Missing GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET in keychain.')
+    throw new Error('Missing Gmail OAuth keys. Fill them in the Setup screen first.')
   }
-  return { clientId, clientSecret }
-}
 
-async function loadTokens() {
-  const raw = await keytar.getPassword(SERVICE, TOKENS_KEY)
-  return raw ? JSON.parse(raw) : null
-}
-async function saveTokens(tokens: any) {
-  await keytar.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens))
-}
-
-// Check if we already have tokens; if so, confirm email
-ipcMain.handle('gmail:status', async () => {
-  try {
-    const tokens = await loadTokens()
-    if (!tokens) return { connected: false }
-    const { clientId, clientSecret } = await getClientSecrets()
-    const oAuth = new google.auth.OAuth2({ clientId, clientSecret })
-    oAuth.setCredentials(tokens)
-    const gmail = google.gmail({ version: 'v1', auth: oAuth })
-    const prof = await gmail.users.getProfile({ userId: 'me' })
-    return { connected: true, email: prof.data.emailAddress }
-  } catch (err: any) {
-    return { connected: false, error: err?.message || String(err) }
-  }
-})
-
-// Launch consent in the browser, receive the code on a local port,
-// exchange for tokens, save them, and return the email.
-ipcMain.handle('gmail:connect', async () => {
-  const { clientId, clientSecret } = await getClientSecrets()
-  const port = await getPort({ port: [...Array(101)].map((_, i) => 53100 + i) })
+  const port = await getPort({ port: 0 })
   const redirectUri = `http://127.0.0.1:${port}/oauth2callback`
-  const oAuth = new google.auth.OAuth2({ clientId, clientSecret, redirectUri })
+  const auth = new google.auth.OAuth2(clientId, clientSecret, redirectUri)
   const scopes = [
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.readonly',
     'openid',
     'email',
     'profile',
-    'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.modify',
   ]
-  const url = oAuth.generateAuthUrl({
+
+  const state = randomUUID()
+  const authUrl = auth.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
     scope: scopes,
-    state: randomUUID(),
+    prompt: 'consent',
+    state,
   })
 
-  const result = await new Promise<{ ok: boolean; email?: string }>((resolve, reject) => {
-    const server = http.createServer(async (req, res) => {
+  await shell.openExternal(authUrl)
+
+  return await new Promise<{ ok: true }>((resolve, reject) => {
+    const server = createServer(async (req, res) => {
       try {
-        if (!req.url?.startsWith('/oauth2callback')) {
+        if (!req.url) return
+        const u = new URL(req.url, `http://127.0.0.1:${port}`)
+        if (u.pathname !== '/oauth2callback') {
           res.statusCode = 404
-          return res.end('Not found')
+          res.end('Not found')
+          return
         }
-        const full = new URL(req.url, `http://127.0.0.1:${port}`)
-        const code = full.searchParams.get('code')
-        if (!code) throw new Error('No code')
+        const code = u.searchParams.get('code')
+        const rstate = u.searchParams.get('state')
+        if (!code || rstate !== state) {
+          res.statusCode = 400
+          res.end('Invalid OAuth response')
+          throw new Error('Invalid OAuth response')
+        }
 
-        const { tokens } = await oAuth.getToken(code)
-        oAuth.setCredentials(tokens)
-        await saveTokens(tokens)
+        const { tokens } = await auth.getToken(code)
+        await keytar.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens))
 
-        const oauth2 = google.oauth2({ version: 'v2', auth: oAuth })
-        const me = await oauth2.userinfo.get()
-
-        res.writeHead(200, { 'Content-Type': 'text/html' })
-        res.end('<h3>✅ Gmail connected. You can close this window.</h3>')
-
-        resolve({ ok: true, email: me.data.email || undefined })
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/html')
+        res.end('<b>Gmail connected!</b> You can close this tab.')
+        resolve({ ok: true })
       } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'text/html' })
-        res.end('<h3>❌ Gmail connect failed. Check the app console.</h3>')
         reject(err)
       } finally {
         server.close()
-        win?.focus()
       }
     })
-    server.listen(port, '127.0.0.1')
-    // open the consent URL in the default browser
-    open(url).catch(reject)
-    // safety timeout
-    setTimeout(() => reject(new Error('OAuth timed out')), 5 * 60 * 1000)
-  })
 
-  return result
+    server.listen(port, () => console.log(`[gmail] callback listening on ${port}`))
+  })
 })
 
-/* --------------------------------- Boot -------------------------------- */
+/* -------------------- App lifecycle -------------------- */
 app.whenReady().then(() => {
   initDB()
   createWindow()
 })
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+})

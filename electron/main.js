@@ -3,15 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// electron/main.ts
 const electron_1 = require("electron");
 const path_1 = require("path");
-const node_http_1 = __importDefault(require("node:http"));
-const node_crypto_1 = require("node:crypto");
+const http_1 = require("http");
+const crypto_1 = require("crypto");
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const keytar_1 = __importDefault(require("keytar"));
 const get_port_1 = __importDefault(require("get-port"));
-const open_1 = __importDefault(require("open"));
 const googleapis_1 = require("googleapis");
 let win = null;
 let db;
@@ -40,12 +38,12 @@ async function createWindow() {
         width: 1200,
         height: 800,
         webPreferences: {
-            preload: (0, path_1.join)(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
+            preload: (0, path_1.join)(__dirname, 'preload.js'),
         },
     });
-    // devtools visible in dev so you can test APIs from the Console
+    // devtools in dev so we can see Console logs
     win.webContents.openDevTools({ mode: 'detach' });
     const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
     if (devUrl) {
@@ -55,7 +53,7 @@ async function createWindow() {
         await win.loadFile((0, path_1.join)(__dirname, '../renderer/index.html'));
     }
 }
-/* ----------------------------- Settings IPC ----------------------------- */
+/* -------------------- IPC: Settings + Secrets -------------------- */
 electron_1.ipcMain.handle('settings:get', () => {
     return db.prepare('SELECT * FROM settings WHERE id=1').get();
 });
@@ -73,7 +71,6 @@ electron_1.ipcMain.handle('settings:update', (_e, payload) => {
   `).run(payload);
     return { ok: true };
 });
-/* ------------------------------ Secrets IPC ----------------------------- */
 electron_1.ipcMain.handle('secrets:set', async (_e, { key, value }) => {
     await keytar_1.default.setPassword(SERVICE, key, value);
     return { ok: true };
@@ -82,106 +79,92 @@ electron_1.ipcMain.handle('secrets:get', async (_e, key) => {
     const v = await keytar_1.default.getPassword(SERVICE, key);
     return v || null;
 });
-/* ------------------------------ Gmail OAuth ----------------------------- */
-// Read client id/secret from keychain keys you enter in Setup:
-//  - GMAIL_CLIENT_ID
-//  - GMAIL_CLIENT_SECRET
-async function getClientSecrets() {
+/* -------------------- IPC: Gmail OAuth -------------------- */
+electron_1.ipcMain.handle('gmail:status', async () => {
+    const raw = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
+    if (!raw)
+        return { connected: false };
+    try {
+        const tokens = JSON.parse(raw);
+        const auth = new googleapis_1.google.auth.OAuth2();
+        auth.setCredentials(tokens);
+        const gmail = googleapis_1.google.gmail({ version: 'v1', auth });
+        const me = await gmail.users.getProfile({ userId: 'me' });
+        return { connected: true, email: me.data.emailAddress || null };
+    }
+    catch (err) {
+        return { connected: false, error: String(err?.message || err) };
+    }
+});
+electron_1.ipcMain.handle('gmail:connect', async () => {
     const clientId = await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID');
     const clientSecret = await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET');
     if (!clientId || !clientSecret) {
-        throw new Error('Missing GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET in keychain.');
+        throw new Error('Missing Gmail OAuth keys. Fill them in the Setup screen first.');
     }
-    return { clientId, clientSecret };
-}
-async function loadTokens() {
-    const raw = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
-    return raw ? JSON.parse(raw) : null;
-}
-async function saveTokens(tokens) {
-    await keytar_1.default.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens));
-}
-// Check if we already have tokens; if so, confirm email
-electron_1.ipcMain.handle('gmail:status', async () => {
-    try {
-        const tokens = await loadTokens();
-        if (!tokens)
-            return { connected: false };
-        const { clientId, clientSecret } = await getClientSecrets();
-        const oAuth = new googleapis_1.google.auth.OAuth2({ clientId, clientSecret });
-        oAuth.setCredentials(tokens);
-        const gmail = googleapis_1.google.gmail({ version: 'v1', auth: oAuth });
-        const prof = await gmail.users.getProfile({ userId: 'me' });
-        return { connected: true, email: prof.data.emailAddress };
-    }
-    catch (err) {
-        return { connected: false, error: err?.message || String(err) };
-    }
-});
-// Launch consent in the browser, receive the code on a local port,
-// exchange for tokens, save them, and return the email.
-electron_1.ipcMain.handle('gmail:connect', async () => {
-    const { clientId, clientSecret } = await getClientSecrets();
-    const port = await (0, get_port_1.default)({ port: [...Array(101)].map((_, i) => 53100 + i) });
+    const port = await (0, get_port_1.default)({ port: 0 });
     const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
-    const oAuth = new googleapis_1.google.auth.OAuth2({ clientId, clientSecret, redirectUri });
+    const auth = new googleapis_1.google.auth.OAuth2(clientId, clientSecret, redirectUri);
     const scopes = [
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.readonly',
         'openid',
         'email',
         'profile',
-        'https://www.googleapis.com/auth/gmail.send',
-        'https://www.googleapis.com/auth/gmail.modify',
     ];
-    const url = oAuth.generateAuthUrl({
+    const state = (0, crypto_1.randomUUID)();
+    const authUrl = auth.generateAuthUrl({
         access_type: 'offline',
-        prompt: 'consent',
         scope: scopes,
-        state: (0, node_crypto_1.randomUUID)(),
+        prompt: 'consent',
+        state,
     });
-    const result = await new Promise((resolve, reject) => {
-        const server = node_http_1.default.createServer(async (req, res) => {
+    await electron_1.shell.openExternal(authUrl);
+    return await new Promise((resolve, reject) => {
+        const server = (0, http_1.createServer)(async (req, res) => {
             try {
-                if (!req.url?.startsWith('/oauth2callback')) {
+                if (!req.url)
+                    return;
+                const u = new URL(req.url, `http://127.0.0.1:${port}`);
+                if (u.pathname !== '/oauth2callback') {
                     res.statusCode = 404;
-                    return res.end('Not found');
+                    res.end('Not found');
+                    return;
                 }
-                const full = new URL(req.url, `http://127.0.0.1:${port}`);
-                const code = full.searchParams.get('code');
-                if (!code)
-                    throw new Error('No code');
-                const { tokens } = await oAuth.getToken(code);
-                oAuth.setCredentials(tokens);
-                await saveTokens(tokens);
-                const oauth2 = googleapis_1.google.oauth2({ version: 'v2', auth: oAuth });
-                const me = await oauth2.userinfo.get();
-                res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end('<h3>✅ Gmail connected. You can close this window.</h3>');
-                resolve({ ok: true, email: me.data.email || undefined });
+                const code = u.searchParams.get('code');
+                const rstate = u.searchParams.get('state');
+                if (!code || rstate !== state) {
+                    res.statusCode = 400;
+                    res.end('Invalid OAuth response');
+                    throw new Error('Invalid OAuth response');
+                }
+                const { tokens } = await auth.getToken(code);
+                await keytar_1.default.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens));
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'text/html');
+                res.end('<b>Gmail connected!</b> You can close this tab.');
+                resolve({ ok: true });
             }
             catch (err) {
-                res.writeHead(500, { 'Content-Type': 'text/html' });
-                res.end('<h3>❌ Gmail connect failed. Check the app console.</h3>');
                 reject(err);
             }
             finally {
                 server.close();
-                win?.focus();
             }
         });
-        server.listen(port, '127.0.0.1');
-        // open the consent URL in the default browser
-        (0, open_1.default)(url).catch(reject);
-        // safety timeout
-        setTimeout(() => reject(new Error('OAuth timed out')), 5 * 60 * 1000);
+        server.listen(port, () => console.log(`[gmail] callback listening on ${port}`));
     });
-    return result;
 });
-/* --------------------------------- Boot -------------------------------- */
+/* -------------------- App lifecycle -------------------- */
 electron_1.app.whenReady().then(() => {
     initDB();
     createWindow();
 });
-electron_1.app.on('window-all-closed', () => { if (process.platform !== 'darwin')
-    electron_1.app.quit(); });
-electron_1.app.on('activate', () => { if (electron_1.BrowserWindow.getAllWindows().length === 0)
-    createWindow(); });
+electron_1.app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin')
+        electron_1.app.quit();
+});
+electron_1.app.on('activate', () => {
+    if (electron_1.BrowserWindow.getAllWindows().length === 0)
+        createWindow();
+});
