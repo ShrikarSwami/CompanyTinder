@@ -1,14 +1,18 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173 }
-})
-
-build: {
-  outDir: 'dist-electron',   // Ensure Vite builds to dist-electron
-  rollupOptions: {
-    input: 'src/index.html'  // Specify the path to index.html in the src folder
+  build: {
+    outDir: 'dist-electron', // Ensure files are built to dist-electron
+    rollupOptions: {
+      input: path.resolve(__dirname, 'src/index.html'), // Specify path to the source index.html
+    },
+    target: 'electron', // Ensure Electron target
+    emptyOutDir: true, // Clear the output directory before building
+  },
+  server: {
+    port: 5173, // Default port for Vite dev server
   }
-}
+});

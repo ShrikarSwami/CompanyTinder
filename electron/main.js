@@ -12,6 +12,7 @@ const keytar_1 = __importDefault(require("keytar"));
 const open_1 = __importDefault(require("open"));
 const get_port_1 = __importDefault(require("get-port"));
 const googleapis_1 = require("googleapis");
+// Initialize the database and the window
 let win = null;
 let db;
 const SERVICE = 'CompanyTinder';
@@ -34,24 +35,25 @@ function initDB() {
     INSERT OR IGNORE INTO settings(id) VALUES (1);
   `);
 }
+// Creates the browser window
 async function createWindow() {
     win = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
         webPreferences: {
-            preload: (0, node_path_1.join)(__dirname, 'preload.js'), // This should be in dist-electron
+            preload: (0, node_path_1.join)(__dirname, 'preload.js'), // Ensure path to preload.js is correct
             contextIsolation: true,
             nodeIntegration: false
         }
     });
-    // Helpful during dev
+    // Open DevTools in development
     win.webContents.openDevTools({ mode: 'detach' });
     const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
     if (devUrl) {
-        await win.loadURL(devUrl);
+        await win.loadURL(devUrl); // In Dev Mode, load from Vite dev server
     }
     else {
-        await win.loadFile((0, node_path_1.join)(__dirname, '../dist-electron/index.html')); // Points to the correct HTML file
+        await win.loadFile((0, node_path_1.join)(__dirname, '../renderer/index.html')); // In production, load from the built file
     }
 }
 /* ---------------------- IPC: Settings (SQLite) ---------------------- */
@@ -99,8 +101,6 @@ electron_1.ipcMain.handle('gmail:status', async () => {
         if (!raw)
             return { connected: false };
         const tokens = JSON.parse(raw);
-        // Client ID/Secret not required to check basic calls if refresh_token present
-        // but we’ll try to use saved client info when available.
         const clientId = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID')) ?? '';
         const clientSecret = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')) ?? '';
         const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1'); // dummy
@@ -115,7 +115,6 @@ electron_1.ipcMain.handle('gmail:status', async () => {
 });
 /** Run local-server OAuth flow, store tokens in Keychain */
 electron_1.ipcMain.handle('gmail:connect', async () => {
-    // These should be stored via Setup screen (Keytar)
     const clientId = await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID');
     const clientSecret = await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET');
     if (!clientId || !clientSecret) {
@@ -143,7 +142,6 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
                 if (!req.url)
                     return;
                 if (req.url.startsWith('/oauth2callback')) {
-                    // parse query
                     const url = new URL(req.url, `http://127.0.0.1:${port}`);
                     const code = url.searchParams.get('code');
                     const returnedState = url.searchParams.get('state');
@@ -151,18 +149,14 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
                         throw new Error('Invalid OAuth response');
                     const { tokens } = await oauth2.getToken(code);
                     oauth2.setCredentials(tokens);
-                    // Persist tokens
                     await keytar_1.default.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens));
-                    // inside ipcMain.handle('gmail:connect', ...) right before resolve()
                     const email = (await fetchGmailProfile(oauth2)) ?? undefined;
                     resolve({ ok: true, email });
-                    // Nice success page
                     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                     res.end(`<html><body style="font-family: ui-sans-serif; padding: 24px">
             <h2>✅ Gmail connected</h2>
             <p>You can close this window and return to CompanyTinder.</p>
           </body></html>`);
-                    resolve({ ok: true, email });
                     setTimeout(() => server.close(), 100);
                 }
                 else {
@@ -178,7 +172,6 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
             }
         });
         server.listen(port, () => {
-            // Open the browser to the consent screen
             (0, open_1.default)(authUrl).catch((e) => {
                 console.error('Failed to open browser:', e);
                 electron_1.shell.openExternal(authUrl).catch(() => { });

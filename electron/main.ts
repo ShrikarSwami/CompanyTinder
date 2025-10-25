@@ -8,11 +8,13 @@ import open from 'open'
 import getPort from 'get-port'
 import { google } from 'googleapis'
 
+// Initialize the database and the window
 let win: BrowserWindow | null = null
 let db: Database.Database
 
 const SERVICE = 'CompanyTinder'
 const TOKENS_KEY = 'GMAIL_TOKENS' // stored in keychain as JSON
+
 type Settings = {
   sender_name: string
   sender_email: string
@@ -42,26 +44,26 @@ function initDB() {
   `)
 }
 
+// Creates the browser window
 async function createWindow() {
   win = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: join(__dirname, 'preload.js'), // Correct path to dist-electron/preload.js
+      preload: join(__dirname, 'preload.js'), // Ensure path to preload.js is correct
       contextIsolation: true,
       nodeIntegration: false
     }
   })
 
-
-  // Helpful during dev
+  // Open DevTools in development
   win.webContents.openDevTools({ mode: 'detach' })
 
   const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
   if (devUrl) {
-    await win.loadURL(devUrl)
+    await win.loadURL(devUrl)  // In Dev Mode, load from Vite dev server
   } else {
-    await win.loadFile(join(__dirname, '../dist-electron/index.html')) // Make sure this is correct
+    await win.loadFile(join(__dirname, '../renderer/index.html'))  // In production, load from the built file
   }
 }
 
@@ -90,6 +92,7 @@ ipcMain.handle('secrets:set', async (_e, { key, value }: { key: string; value: s
   await keytar.setPassword(SERVICE, key, value)
   return { ok: true }
 })
+
 ipcMain.handle('secrets:get', async (_e, key: string) => {
   const v = await keytar.getPassword(SERVICE, key)
   return v || null
@@ -117,15 +120,13 @@ ipcMain.handle('gmail:status', async () => {
     if (!raw) return { connected: false }
 
     const tokens = JSON.parse(raw)
-    // Client ID/Secret not required to check basic calls if refresh_token present
-    // but we’ll try to use saved client info when available.
     const clientId = (await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_ID')) ?? ''
     const clientSecret = (await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')) ?? ''
     const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1') // dummy
     oauth2.setCredentials(tokens)
 
     const email = await fetchGmailProfile(oauth2)
-    return { connected: true, email: email ?? undefined }
+    return { connected: true, email: email ?? undefined } 
   } catch (err: any) {
     console.warn('[gmail:status] failed:', err?.message || err)
     return { connected: false, error: String(err?.message || err) }
@@ -134,7 +135,6 @@ ipcMain.handle('gmail:status', async () => {
 
 /** Run local-server OAuth flow, store tokens in Keychain */
 ipcMain.handle('gmail:connect', async () => {
-  // These should be stored via Setup screen (Keytar)
   const clientId = await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_ID')
   const clientSecret = await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')
   if (!clientId || !clientSecret) {
@@ -165,7 +165,6 @@ ipcMain.handle('gmail:connect', async () => {
       try {
         if (!req.url) return
         if (req.url.startsWith('/oauth2callback')) {
-          // parse query
           const url = new URL(req.url, `http://127.0.0.1:${port}`)
           const code = url.searchParams.get('code')
           const returnedState = url.searchParams.get('state')
@@ -174,21 +173,17 @@ ipcMain.handle('gmail:connect', async () => {
           const { tokens } = await oauth2.getToken(code)
           oauth2.setCredentials(tokens)
 
-          // Persist tokens
           await keytar.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens))
 
-          // inside ipcMain.handle('gmail:connect', ...) right before resolve()
           const email = (await fetchGmailProfile(oauth2)) ?? undefined
           resolve({ ok: true, email })
 
-          // Nice success page
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
           res.end(`<html><body style="font-family: ui-sans-serif; padding: 24px">
             <h2>✅ Gmail connected</h2>
             <p>You can close this window and return to CompanyTinder.</p>
           </body></html>`)
 
-          resolve({ ok: true, email })
           setTimeout(() => server.close(), 100)
         } else {
           res.writeHead(404); res.end()
@@ -202,11 +197,9 @@ ipcMain.handle('gmail:connect', async () => {
     })
 
     server.listen(port, () => {
-      // Open the browser to the consent screen
       open(authUrl).catch((e) => {
         console.error('Failed to open browser:', e)
         shell.openExternal(authUrl).catch(() => {})
-
       })
     })
   })
