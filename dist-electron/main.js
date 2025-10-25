@@ -39,7 +39,7 @@ async function createWindow() {
         width: 1200,
         height: 800,
         webPreferences: {
-            preload: (0, node_path_1.join)(__dirname, 'preload.js'), // This should be in dist-electron
+            preload: (0, node_path_1.join)(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false
         }
@@ -51,7 +51,7 @@ async function createWindow() {
         await win.loadURL(devUrl);
     }
     else {
-        await win.loadFile((0, node_path_1.join)(__dirname, '../dist-electron/index.html')); // Points to the correct HTML file
+        await win.loadFile((0, node_path_1.join)(__dirname, '../renderer/index.html'));
     }
 }
 /* ---------------------- IPC: Settings (SQLite) ---------------------- */

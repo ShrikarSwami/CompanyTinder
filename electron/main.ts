@@ -47,11 +47,12 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+      preload: join(__dirname, 'preload.js'), // Correct path to dist-electron/preload.js
       contextIsolation: true,
       nodeIntegration: false
     }
   })
+
 
   // Helpful during dev
   win.webContents.openDevTools({ mode: 'detach' })
@@ -60,7 +61,7 @@ async function createWindow() {
   if (devUrl) {
     await win.loadURL(devUrl)
   } else {
-    await win.loadFile(join(__dirname, '../renderer/index.html'))
+    await win.loadFile(join(__dirname, '../dist-electron/index.html')) // Make sure this is correct
   }
 }
 
