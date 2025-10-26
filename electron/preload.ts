@@ -53,4 +53,10 @@ contextBridge.exposeInMainWorld('api', {
       cap: number
       remaining: number
     }>,
+  
+  // Google
+  searchGoogle: (q: string) => ipcRenderer.invoke('search:google', q),
+  addCompany: (payload: { id?: string; name: string; link: string; note?: string }) =>
+    ipcRenderer.invoke('companies:add', payload),
+  listCompanies: () => ipcRenderer.invoke('companies:list'),
 })

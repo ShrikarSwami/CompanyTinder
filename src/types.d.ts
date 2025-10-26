@@ -23,4 +23,12 @@ declare global {
     }
   }
 }
+declare interface Window {
+  api: {
+    // existing...
+    searchGoogle(q: string): Promise<{ ok: boolean; items?: Array<{ title: string; link: string; domain: string; snippet: string }>; error?: string }>;
+    addCompany(payload: { id?: string; name: string; link: string; note?: string }): Promise<{ ok: boolean; id?: string; error?: string }>;
+    listCompanies(): Promise<{ ok: boolean; items: Array<{ id: string; name: string; domain: string; link: string; note: string; created_at: number }> }>;
+  }
+}
 export {}

@@ -59,7 +59,84 @@ export default function App() {
   return (
     <Shell>
       <h2>Finder</h2>
-      <p>Setup complete. Next: add search adapter + session meter.</p>
+      function FinderPane() {
+        const [q, setQ] = useState('');
+        const [res, setRes] = useState<
+          Array<{ title: string; link: string; domain: string; snippet: string }>
+        >([]);
+        const [companies, setCompanies] = useState<Array<{ id: string; name: string; domain: string; link: string }>>([]);
+        const [busy, setBusy] = useState(false);
+        const [msg, setMsg] = useState('');
+
+        useEffect(() => {
+          window.api.listCompanies().then(r => { if (r.ok) setCompanies(r.items); });
+        }, []);
+
+        const runSearch = async () => {
+          setBusy(true); setMsg('');
+          const r = await window.api.searchGoogle(q.trim());
+          setBusy(false);
+          if (!r.ok) { setMsg(r.error || 'Search failed'); return; }
+          setRes(r.items || []);
+        };
+
+        const add = async (title: string, link: string) => {
+          const r = await window.api.addCompany({ name: title, link });
+          if (r.ok) {
+            setMsg('Added ✔');
+            window.api.listCompanies().then(r => { if (r.ok) setCompanies(r.items); });
+          } else {
+            setMsg(r.error || 'Add failed');
+          }
+        };
+
+        return (
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr', alignItems: 'start' }}>
+            <div>
+              <h3 style={{ marginBottom: 8 }}>Find companies</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                  placeholder='ex: robotics startups in Boston'
+                  style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #333', background: '#222', color: '#fff' }}
+                />
+                <button onClick={runSearch} disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
+              </div>
+              {msg && <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>{msg}</div>}
+              <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                {res.map(item => (
+                  <div key={item.link} style={{ border: '1px solid #333', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontWeight: 600 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>{item.domain}</div>
+                    <div style={{ fontSize: 12, marginTop: 4, opacity: 0.9 }}>{item.snippet}</div>
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                      <button onClick={() => add(item.title, item.link)}>Add</button>
+                      <a href={item.link} style={{ fontSize: 12 }} onClick={e => { e.preventDefault(); window.open(item.link); }}>Open</a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 style={{ marginBottom: 8 }}>My companies</h3>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {companies.map(c => (
+                  <div key={c.id} style={{ border: '1px solid #333', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontWeight: 600 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>{c.domain}</div>
+                    <div style={{ marginTop: 6 }}>
+                      <button style={{ marginRight: 6 }}>❤️</button>
+                      <button>✖️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
 
       <QuotaBar quota={quota} />
       <ComposeCard

@@ -50,6 +50,18 @@ function initDB() {
       ts INTEGER
     );
   `)
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS companies(
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    domain TEXT,
+    link TEXT,
+    source TEXT,
+    note TEXT,
+    created_at INTEGER
+  );
+`);
+
 }
 function startOfLocalDayMs() { const d = new Date(); d.setHours(0,0,0,0); return d.getTime() }
 function sentCountToday() { return (db.prepare('SELECT COUNT(*) n FROM sends WHERE ts >= ?').get(startOfLocalDayMs()) as any)?.n ?? 0 }
@@ -235,7 +247,63 @@ ipcMain.handle('gmail:quota', () => {
   return { used, cap, remaining: Math.max(0, cap - used) }
 })
 
+function domainFromUrl(u: string) {
+  try { return new URL(u).hostname.replace(/^www\./,''); } catch { return ''; }
+}
+
+ipcMain.handle('companies:add', (_e, c: { id?: string; name: string; link: string; note?: string }) => {
+  const id = c.id ?? randomUUID();
+  const domain = domainFromUrl(c.link);
+  db.prepare(`
+    INSERT OR REPLACE INTO companies(id, name, domain, link, source, note, created_at)
+    VALUES (@id, @name, @domain, @link, 'google', @note, @created_at)
+  `).run({ id, name: c.name, domain, link: c.link, note: c.note ?? '', created_at: Date.now() });
+  return { ok: true, id };
+});
+
+ipcMain.handle('companies:list', () => {
+  const rows = db.prepare(`SELECT id, name, domain, link, note, created_at FROM companies ORDER BY created_at DESC LIMIT 200`).all();
+  return { ok: true, items: rows };
+});
+
+ipcMain.handle('search:google', async (_e, q: string) => {
+  try {
+    const key = await keytar.getPassword(SERVICE, 'GOOGLE_API_KEY');
+    if (!key) return { ok: false, error: 'Missing GOOGLE_API_KEY in Setup.' };
+
+    // TODO: put your Custom Search Engine ID in Keychain too, or hardcode to start:
+    const cx = (await keytar.getPassword(SERVICE, 'GOOGLE_CSE_CX')) ?? 'PUT_YOUR_CX_HERE';
+    if (!cx || cx === 'PUT_YOUR_CX_HERE') return { ok: false, error: 'Missing Google CSE CX (add via Setup).' };
+
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', key);
+    url.searchParams.set('cx', cx);
+    url.searchParams.set('q', q);
+    url.searchParams.set('num', '10');
+
+    const resp = await fetch(url.toString());
+    if (!resp.ok) return { ok: false, error: `Google API ${resp.status}` };
+    const data: any = await resp.json();
+
+    const items = (data.items ?? []).map((it: any) => ({
+      title: it.title as string,
+      link: it.link as string,
+      domain: domainFromUrl(it.link),
+      snippet: (it.snippet || '') as string,
+    }));
+
+    return { ok: true, items };
+  } catch (e: any) {
+    console.error('[search:google] error', e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+});
+
+
 /* ---------- lifecycle ---------- */
 app.whenReady().then(() => { initDB(); createWindow() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+
+
+  
