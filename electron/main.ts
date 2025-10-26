@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 
-// NOTE: value import + separate type import = no TS2709 error
+// value import + separate type import (avoids TS2709)
 import BetterSqlite3 from 'better-sqlite3'
 import type { Database as BetterDb } from 'better-sqlite3'
 
@@ -77,8 +77,8 @@ async function createWindow() {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false,
-    },
+      nodeIntegration: false
+    }
   })
 
   win.webContents.openDevTools({ mode: 'detach' })
@@ -87,7 +87,6 @@ async function createWindow() {
   if (devUrl) {
     await win.loadURL(devUrl)
   } else {
-    // Vite production build path
     await win.loadFile(join(process.cwd(), 'dist', 'index.html'))
   }
 }
@@ -131,18 +130,8 @@ async function fetchGmailProfile(oauth2: InstanceType<typeof google.auth.OAuth2>
   return res.data.emailAddress ?? undefined
 }
 function buildRawEmail({
-  from,
-  to,
-  subject,
-  text,
-  bcc,
-}: {
-  from: string
-  to: string
-  subject: string
-  text: string
-  bcc?: string
-}) {
+  from, to, subject, text, bcc
+}: { from: string; to: string; subject: string; text: string; bcc?: string }) {
   const lines = [
     `From: ${from}`,
     `To: ${to}`,
@@ -151,9 +140,8 @@ function buildRawEmail({
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset="UTF-8"',
     '',
-    text || '',
+    text || ''
   ].filter(Boolean) as string[]
-
   return Buffer.from(lines.join('\r\n')).toString('base64url')
 }
 
@@ -190,14 +178,14 @@ ipcMain.handle('gmail:connect', async () => {
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/gmail.compose',
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.email'
   ]
   const state = randomUUID()
   const authUrl = oauth2.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: scopes,
-    state,
+    state
   })
 
   const result = await new Promise<{ ok: boolean; email?: string }>((resolve, reject) => {
@@ -225,8 +213,7 @@ ipcMain.handle('gmail:connect', async () => {
           resolve({ ok: true, email })
           setTimeout(() => server.close(), 100)
         } else {
-          res.writeHead(404)
-          res.end()
+          res.writeHead(404); res.end()
         }
       } catch (err: any) {
         console.error('[gmail:connect] callback error:', err)
@@ -252,9 +239,12 @@ ipcMain.handle(
   'gmail:send',
   async (_e, payload: { to: string; subject: string; text: string; bcc?: string }) => {
     try {
-      // 1) Daily cap check
+      // 1) Daily cap check + sender validation
       const s = db.prepare<[], Settings>('SELECT * FROM settings WHERE id=1').get()
-      const cap = Number(s?.daily_cap ?? 25)
+      if (!s || !s.sender_email) {
+        return { ok: false, error: 'Sender email not set. Open Setup and save your profile first.' }
+      }
+      const cap = Number(s.daily_cap ?? 25)
       const used = sentCountToday()
       if (used >= cap) {
         return { ok: false, error: `Daily cap reached (${used}/${cap}). Try again tomorrow.` }
@@ -270,20 +260,20 @@ ipcMain.handle(
       const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1') // dummy
       oauth2.setCredentials(tokens)
 
-      // 3) Build raw RFC 2822 message
+      // 3) Build raw RFC 822 message
       const rawMime = buildRawEmail({
         from: s.sender_email,
         to: payload.to,
         subject: payload.subject,
         text: payload.text,
-        bcc: payload.bcc,
+        bcc: payload.bcc
       })
 
       // 4) Send
       const gmail = google.gmail({ version: 'v1', auth: oauth2 })
       const sendRes = await gmail.users.messages.send({
         userId: 'me',
-        requestBody: { raw: rawMime },
+        requestBody: { raw: rawMime }
       })
 
       // 5) record + return

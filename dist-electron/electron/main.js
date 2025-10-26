@@ -8,7 +8,7 @@ const electron_1 = require("electron");
 const node_http_1 = require("node:http");
 const node_crypto_1 = require("node:crypto");
 const node_path_1 = require("node:path");
-// NOTE: value import + separate type import = no TS2709 error
+// value import + separate type import (avoids TS2709)
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const keytar_1 = __importDefault(require("keytar"));
 const open_1 = __importDefault(require("open"));
@@ -64,8 +64,8 @@ async function createWindow() {
         webPreferences: {
             preload: (0, node_path_1.join)(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false,
-        },
+            nodeIntegration: false
+        }
     });
     win.webContents.openDevTools({ mode: 'detach' });
     const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -73,7 +73,6 @@ async function createWindow() {
         await win.loadURL(devUrl);
     }
     else {
-        // Vite production build path
         await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
     }
 }
@@ -113,7 +112,7 @@ async function fetchGmailProfile(oauth2) {
     const res = await gmail.users.getProfile({ userId: 'me' });
     return res.data.emailAddress ?? undefined;
 }
-function buildRawEmail({ from, to, subject, text, bcc, }) {
+function buildRawEmail({ from, to, subject, text, bcc }) {
     const lines = [
         `From: ${from}`,
         `To: ${to}`,
@@ -122,7 +121,7 @@ function buildRawEmail({ from, to, subject, text, bcc, }) {
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset="UTF-8"',
         '',
-        text || '',
+        text || ''
     ].filter(Boolean);
     return Buffer.from(lines.join('\r\n')).toString('base64url');
 }
@@ -157,14 +156,14 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/gmail.compose',
         'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.email'
     ];
     const state = (0, node_crypto_1.randomUUID)();
     const authUrl = oauth2.generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
         scope: scopes,
-        state,
+        state
     });
     const result = await new Promise((resolve, reject) => {
         const server = (0, node_http_1.createServer)(async (req, res) => {
@@ -213,9 +212,12 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
 /* ---------------- Gmail: send (with cap + quota) ---------------- */
 electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
     try {
-        // 1) Daily cap check
+        // 1) Daily cap check + sender validation
         const s = db.prepare('SELECT * FROM settings WHERE id=1').get();
-        const cap = Number(s?.daily_cap ?? 25);
+        if (!s || !s.sender_email) {
+            return { ok: false, error: 'Sender email not set. Open Setup and save your profile first.' };
+        }
+        const cap = Number(s.daily_cap ?? 25);
         const used = sentCountToday();
         if (used >= cap) {
             return { ok: false, error: `Daily cap reached (${used}/${cap}). Try again tomorrow.` };
@@ -229,19 +231,19 @@ electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
         const clientSecret = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')) ?? '';
         const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1'); // dummy
         oauth2.setCredentials(tokens);
-        // 3) Build raw RFC 2822 message
+        // 3) Build raw RFC 822 message
         const rawMime = buildRawEmail({
             from: s.sender_email,
             to: payload.to,
             subject: payload.subject,
             text: payload.text,
-            bcc: payload.bcc,
+            bcc: payload.bcc
         });
         // 4) Send
         const gmail = googleapis_1.google.gmail({ version: 'v1', auth: oauth2 });
         const sendRes = await gmail.users.messages.send({
             userId: 'me',
-            requestBody: { raw: rawMime },
+            requestBody: { raw: rawMime }
         });
         // 5) record + return
         const id = sendRes.data.id || (0, node_crypto_1.randomUUID)();
