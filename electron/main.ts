@@ -77,17 +77,18 @@ async function createWindow() {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
-    }
-  })
+      nodeIntegration: false,
+    },
+  });
 
-  win.webContents.openDevTools({ mode: 'detach' })
+  win.webContents.openDevTools({ mode: 'detach' });
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
-    await win.loadURL(devUrl)
+    await win.loadURL(devUrl);
   } else {
-    await win.loadFile(join(process.cwd(), "dist", "index.html"))
+    // ✅ make sure this is EXACTLY "dist/index.html"
+    await win.loadFile(join(process.cwd(), 'dist', 'index.html'));
   }
 }
 

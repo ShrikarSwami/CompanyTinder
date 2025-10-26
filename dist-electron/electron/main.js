@@ -64,8 +64,8 @@ async function createWindow() {
         webPreferences: {
             preload: (0, node_path_1.join)(__dirname, 'preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
-        }
+            nodeIntegration: false,
+        },
     });
     win.webContents.openDevTools({ mode: 'detach' });
     const devUrl = process.env.VITE_DEV_SERVER_URL;
@@ -73,7 +73,8 @@ async function createWindow() {
         await win.loadURL(devUrl);
     }
     else {
-        await win.loadFile((0, node_path_1.join)(process.cwd(), "dist", "index.html"));
+        // ✅ make sure this is EXACTLY "dist/index.html"
+        await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
     }
 }
 /* ---------------------- Settings (SQLite) ---------------------- */
