@@ -141,8 +141,8 @@ ipcMain.handle('gmail:connect', async () => {
     throw new Error('Missing Gmail OAuth Client ID/Secret. Open Setup and save them first.')
   }
 
-  const port = await getPort()
-  const redirectUri = `http://127.0.0.1:${port}/oauth2callback`
+  const port = 3820;
+  const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
   const oauth2 = newOAuth2(clientId, clientSecret, redirectUri)
 
   const scopes = [

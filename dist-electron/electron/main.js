@@ -10,7 +10,6 @@ const node_path_1 = require("node:path");
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const keytar_1 = __importDefault(require("keytar"));
 const open_1 = __importDefault(require("open"));
-const get_port_1 = __importDefault(require("get-port"));
 const googleapis_1 = require("googleapis");
 // Initialize the database and the window
 let win = null;
@@ -120,7 +119,7 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
     if (!clientId || !clientSecret) {
         throw new Error('Missing Gmail OAuth Client ID/Secret. Open Setup and save them first.');
     }
-    const port = await (0, get_port_1.default)();
+    const port = 3820;
     const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
     const oauth2 = newOAuth2(clientId, clientSecret, redirectUri);
     const scopes = [
