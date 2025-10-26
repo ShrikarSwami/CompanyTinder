@@ -2,6 +2,8 @@
   "name": "companytinder",
   "version": "0.1.0",
   "private": true,
+  "description": "Find companies, compose outreach, and send with Gmail.",
+  "author": "Shrikar Swami",
   "type": "commonjs",
   "main": "dist-electron/electron/main.js",
 

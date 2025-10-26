@@ -3,14 +3,18 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import Database from 'better-sqlite3'
+
+// NOTE: value import + separate type import = no TS2709 error
+import BetterSqlite3 from 'better-sqlite3'
+import type { Database as BetterDb } from 'better-sqlite3'
+
 import keytar from 'keytar'
 import open from 'open'
 import getPort from 'get-port'
 import { google } from 'googleapis'
 
 let win: BrowserWindow | null = null
-let db: Database // instance type from better-sqlite3
+let db: BetterDb
 
 const SERVICE = 'CompanyTinder'
 const TOKENS_KEY = 'GMAIL_TOKENS' // stored in keychain as JSON
@@ -28,7 +32,7 @@ type Settings = {
 /* ---------------------- DB init ---------------------- */
 function initDB() {
   const userData = app.getPath('userData')
-  db = new Database(join(userData, 'app.db'))
+  db = new BetterSqlite3(join(userData, 'app.db'))
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings(
@@ -43,10 +47,10 @@ function initDB() {
     );
     INSERT OR IGNORE INTO settings(id) VALUES (1);
 
-    -- record each successful Gmail send
+    -- record each successful Gmail send (message id + timestamp)
     CREATE TABLE IF NOT EXISTS sends(
-      id TEXT,      -- Gmail message id
-      ts INTEGER    -- unix ms timestamp
+      id TEXT,
+      ts INTEGER
     );
   `)
 }
@@ -56,15 +60,13 @@ function startOfLocalDayMs() {
   d.setHours(0, 0, 0, 0)
   return d.getTime()
 }
-
 function sentCountToday(): number {
   const since = startOfLocalDayMs()
-  const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since) as { n?: number } | undefined
+  const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since) as { n: number }
   return row?.n ?? 0
 }
-
-function bumpSentCounter(id: string) {
-  db.prepare('INSERT INTO sends(id, ts) VALUES (?, ?)').run(id, Date.now())
+function recordSend(id: string) {
+  db.prepare('INSERT INTO sends (id, ts) VALUES (?, ?)').run(id, Date.now())
 }
 
 /* ---------------------- Window ---------------------- */
@@ -79,15 +81,13 @@ async function createWindow() {
     },
   })
 
-  // DevTools during dev
   win.webContents.openDevTools({ mode: 'detach' })
 
-  // in createWindow()
   const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {
     await win.loadURL(devUrl)
   } else {
-    // point to Vite’s prod output
+    // Vite production build path
     await win.loadFile(join(process.cwd(), 'dist', 'index.html'))
   }
 }
@@ -96,7 +96,6 @@ async function createWindow() {
 ipcMain.handle('settings:get', () => {
   return db.prepare<[], Settings>('SELECT * FROM settings WHERE id=1').get()
 })
-
 ipcMain.handle('settings:update', (_e, payload: Settings) => {
   db.prepare(`
     UPDATE settings SET
@@ -117,7 +116,6 @@ ipcMain.handle('secrets:set', async (_e, { key, value }: { key: string; value: s
   await keytar.setPassword(SERVICE, key, value)
   return { ok: true }
 })
-
 ipcMain.handle('secrets:get', async (_e, key: string) => {
   const v = await keytar.getPassword(SERVICE, key)
   return v || null
@@ -127,13 +125,11 @@ ipcMain.handle('secrets:get', async (_e, key: string) => {
 function newOAuth2(clientId: string, clientSecret: string, redirectUri: string) {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
 }
-
 async function fetchGmailProfile(oauth2: InstanceType<typeof google.auth.OAuth2>) {
   const gmail = google.gmail({ version: 'v1', auth: oauth2 })
   const res = await gmail.users.getProfile({ userId: 'me' })
   return res.data.emailAddress ?? undefined
 }
-
 function buildRawEmail({
   from,
   to,
@@ -157,7 +153,7 @@ function buildRawEmail({
     '',
     text || '',
   ].filter(Boolean) as string[]
-  // Gmail requires base64url (not standard base64)
+
   return Buffer.from(lines.join('\r\n')).toString('base64url')
 }
 
@@ -291,8 +287,8 @@ ipcMain.handle(
       })
 
       // 5) record + return
-      const id = sendRes.data.id || ''
-      bumpSentCounter(id)
+      const id = sendRes.data.id || randomUUID()
+      recordSend(id)
       return { ok: true, id, remaining: Math.max(0, cap - (used + 1)), cap }
     } catch (err: any) {
       console.error('[gmail:send] error:', err)
@@ -301,6 +297,7 @@ ipcMain.handle(
   }
 )
 
+/* ---------------------- Quota ---------------------- */
 ipcMain.handle('gmail:quota', () => {
   const s = db.prepare<[], Settings>('SELECT daily_cap FROM settings WHERE id=1').get()
   const cap = Number(s?.daily_cap ?? 25)

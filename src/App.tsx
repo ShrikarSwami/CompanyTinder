@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+// src/App.tsx
+import { useEffect, useState } from 'react'
 import type { Settings } from './types'
 
 type Quota = { used: number; cap: number; remaining: number }
@@ -6,24 +7,15 @@ type Quota = { used: number; cap: number; remaining: number }
 export default function App() {
   const [step, setStep] = useState<'welcome' | 'setup' | 'finder'>('welcome')
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [quota, setQuota] = useState<Quota | null>(null)
   const [hasApi, setHasApi] = useState(false)
-  const [gmailEmail, setGmailEmail] = useState<string | undefined>()
-  const [quota, setQuota] = useState<Quota>({ used: 0, cap: 25, remaining: 25 })
 
-  // preload bridge + initial data
   useEffect(() => {
     const api = window.api
     setHasApi(!!api)
     if (!api) return
 
-    api.getSettings().then(setSettings).catch((e) => {
-      console.error('[CompanyTinder] getSettings failed:', e)
-    })
-
-    api.gmailStatus().then((s) => {
-      if (s.connected) setGmailEmail(s.email)
-    })
-
+    api.getSettings().then(setSettings).catch((e) => console.error('[getSettings]', e))
     api.gmailQuota().then(setQuota).catch(() => {})
   }, [])
 
@@ -31,10 +23,9 @@ export default function App() {
     return (
       <Shell>
         <h1 style={{ fontSize: 44, marginBottom: 12 }}>CompanyTinder</h1>
-        <p style={{ opacity: 0.85, marginBottom: 12 }}>
+        <p style={{ opacity: 0.8, marginBottom: 12 }}>
           Scaffold running. Next: Setup Wizard, sessions, Gmail, search adapters.
         </p>
-
         <ol style={{ lineHeight: 1.7, marginLeft: 20, opacity: 0.9 }}>
           <li>Connect Gmail</li>
           <li>Enter API keys</li>
@@ -57,210 +48,97 @@ export default function App() {
   }
 
   if (step === 'setup') {
-    return (
-      <Setup
-        initial={settings ?? ({} as any)}
-        onDone={() => {
-          setStep('finder')
-          // refresh settings/quota after setup
-          if (window.api) {
-            window.api.getSettings().then(setSettings)
-            window.api.gmailStatus().then((s) => s.connected && setGmailEmail(s.email))
-            window.api.gmailQuota().then(setQuota)
-          }
-        }}
-      />
-    )
+    return <Setup initial={settings ?? ({} as any)} onDone={() => setStep('finder')} />
   }
 
   return (
     <Shell>
-      <Header
-        gmailEmail={gmailEmail}
-        quota={quota}
-        onRefresh={async () => {
-          if (!window.api) return
-          setSettings(await window.api.getSettings())
-          const qs = await window.api.gmailQuota()
-          setQuota(qs)
-          const st = await window.api.gmailStatus()
-          if (st.connected) setGmailEmail(st.email)
-        }}
-      />
+      <h2>Finder</h2>
+      <p>Setup complete. Next: add search adapter + session meter.</p>
 
-      <p style={{ opacity: 0.85, marginBottom: 14 }}>
-        Setup complete. Next: add search adapter + session meter.
-      </p>
-
-      <ComposeCard
-        settings={settings}
-        quota={quota}
-        onSent={async () => {
-          if (!window.api) return
-          const qs = await window.api.gmailQuota()
-          setQuota(qs)
-        }}
-      />
+      <QuotaBar quota={quota} />
+      <ComposeCard onSent={() => window.api.gmailQuota().then(setQuota).catch(() => {})} />
     </Shell>
   )
 }
 
-/* -------------------------------- UI bits -------------------------------- */
+/* ---------------- UI bits ---------------- */
 
-function Header({
-  gmailEmail,
-  quota,
-  onRefresh,
-}: {
-  gmailEmail?: string
-  quota: Quota
-  onRefresh: () => void
-}) {
-  const pct = useMemo(() => {
-    if (!quota.cap) return 0
-    return Math.min(100, Math.round((quota.used / quota.cap) * 100))
-  }, [quota])
-
-  const overCap = quota.remaining <= 0
-
+function QuotaBar({ quota }: { quota: Quota | null }) {
+  if (!quota) return null
+  const pct = quota.cap ? Math.min(100, Math.round((quota.used / quota.cap) * 100)) : 0
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-      <div style={{ fontWeight: 600 }}>
-        {gmailEmail ? `Gmail: ${gmailEmail}` : 'Gmail: not connected'}
+    <div style={{ margin: '12px 0 20px 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+        <span>Daily quota</span>
+        <span>
+          {quota.used}/{quota.cap} used (left {quota.remaining})
+        </span>
       </div>
-
-      <div style={{ flex: 1, maxWidth: 420 }}>
-        <div style={{
-          height: 8,
-          background: '#222',
-          border: '1px solid #333',
-          borderRadius: 999,
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            width: `${pct}%`,
-            height: '100%',
-            background: overCap ? '#ef4444' : '#22c55e',
-            transition: 'width 300ms ease'
-          }} />
-        </div>
-        <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
-          {quota.used}/{quota.cap} sent today • {quota.remaining} remaining
-        </div>
+      <div style={{ height: 8, background: '#333', borderRadius: 6, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? '#ef4444' : '#22c55e' }} />
       </div>
-
-      <button onClick={onRefresh}>Refresh</button>
     </div>
   )
 }
 
-function ComposeCard({
-  settings,
-  quota,
-  onSent,
-}: {
-  settings: Settings | null
-  quota: Quota
-  onSent: () => void
-}) {
+function ComposeCard({ onSent }: { onSent: () => void }) {
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
-  const [useBcc, setUseBcc] = useState(true)
+  const [withBcc, setWithBcc] = useState(true)
   const [sending, setSending] = useState(false)
-  const [status, setStatus] = useState<string>('')
+  const [status, setStatus] = useState('')
 
-  const disabled = sending || !window.api || quota.remaining <= 0
-
-  async function handleSend() {
+  const send = async () => {
     try {
       setSending(true)
       setStatus('Sending…')
-
-      const bcc = useBcc ? (settings?.bcc_list || '') : ''
+      const s = await window.api.getSettings()
       const res = await window.api.gmailSend({
-        to: to || (settings?.sender_email || ''),
+        to: to || s.sender_email, // allow testing to self
         subject: subject || 'CompanyTinder test ✅',
-        text: body || 'Hello from CompanyTinder! This was sent through the app.',
-        bcc,
+        text: body || 'Hello from CompanyTinder!',
+        bcc: withBcc ? (s.bcc_list || '') : '',
       })
-
       if (res.ok) {
         setStatus(`Sent! Gmail ID: ${res.id}`)
-        setTo(''); setSubject(''); setBody('')
         onSent()
       } else {
-        setStatus(res.error || 'Send failed.')
+        setStatus(res.error || 'Failed to send.')
       }
     } catch (e) {
       console.error(e)
-      setStatus('Send failed — check console.')
+      setStatus('Error. See console.')
     } finally {
       setSending(false)
     }
   }
 
   return (
-    <div style={{
-      border: '1px solid #333',
-      borderRadius: 10,
-      padding: 16,
-      width: 440,
-      background: '#121212'
-    }}>
+    <div style={{ marginTop: 16, maxWidth: 520, border: '1px solid #333', borderRadius: 8, padding: 16 }}>
       <h3 style={{ marginTop: 0 }}>Compose</h3>
 
-      <label style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 12, opacity: 0.8 }}>To</span>
-        <input
-          placeholder="someone@example.com"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          style={inputStyle}
-        />
+      <Field label="To" value={to} onChange={setTo} placeholder="someone@example.com" />
+      <Field label="Subject" value={subject} onChange={setSubject} placeholder="Subject" />
+      <TextArea label="Body" value={body} onChange={setBody} placeholder="Write your message..." />
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, opacity: 0.9 }}>
+        <input type="checkbox" checked={withBcc} onChange={(e) => setWithBcc(e.target.checked)} />
+        Send with BCC from Settings
       </label>
 
-      <label style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 12, opacity: 0.8 }}>Subject</span>
-        <input
-          placeholder="Subject"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          style={inputStyle}
-        />
-      </label>
-
-      <label style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
-        <span style={{ fontSize: 12, opacity: 0.8 }}>Body</span>
-        <textarea
-          placeholder="Write your message..."
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={6}
-          style={{ ...inputStyle, resize: 'vertical' }}
-        />
-      </label>
-
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 6 }}>
-        <input
-          type="checkbox"
-          checked={useBcc}
-          onChange={(e) => setUseBcc(e.target.checked)}
-        />
-        <span>Send with BCC from Settings</span>
-      </label>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-        <button disabled={disabled} onClick={handleSend}>
-          {sending ? 'Sending…' : quota.remaining <= 0 ? 'Cap reached' : 'Send'}
+      <div style={{ marginTop: 10 }}>
+        <button disabled={sending} onClick={send}>
+          {sending ? 'Sending…' : 'Send'}
         </button>
-        <span style={{ fontSize: 13, opacity: 0.8 }}>{status}</span>
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>{status}</div>
       </div>
     </div>
   )
 }
 
-function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => void }) {
+function Setup({ initial, onDone }: { initial: Partial<Settings>; onDone: () => void }) {
   const [form, setForm] = useState<Settings>({
     sender_name: initial.sender_name || '',
     sender_email: initial.sender_email || '',
@@ -270,6 +148,7 @@ function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => 
     bcc_list: initial.bcc_list || '',
     daily_cap: Number(initial.daily_cap || 25),
   })
+
   const [gmailClientId, setGmailClientId] = useState('')
   const [gmailClientSecret, setGmailClientSecret] = useState('')
   const [googleApiKey, setGoogleApiKey] = useState('')
@@ -277,21 +156,18 @@ function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => 
   const [saved, setSaved] = useState(false)
 
   async function handleSave() {
-    setSaving(true); setSaved(false)
+    setSaving(true)
+    setSaved(false)
     try {
-      if (!window.api) {
-        console.warn('[CompanyTinder] Save skipped — window.api not available.')
-        setSaved(true); setTimeout(onDone, 400)
-        return
-      }
       await window.api.updateSettings(form)
       if (gmailClientId) await window.api.setSecret('GMAIL_CLIENT_ID', gmailClientId)
       if (gmailClientSecret) await window.api.setSecret('GMAIL_CLIENT_SECRET', gmailClientSecret)
       if (googleApiKey) await window.api.setSecret('GOOGLE_API_KEY', googleApiKey)
-      setSaved(true); setTimeout(onDone, 400)
+      setSaved(true)
+      setTimeout(onDone, 400)
     } catch (err) {
-      console.error('[CompanyTinder] handleSave failed:', err)
-      alert('Save failed. Check DevTools Console for details.')
+      console.error('[Setup] save failed:', err)
+      alert('Save failed. Check DevTools console.')
     } finally {
       setSaving(false)
     }
@@ -300,7 +176,6 @@ function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => 
   return (
     <Shell>
       <h2>Setup</h2>
-
       <Section title="Profile">
         <Field label="Your name" value={form.sender_name} onChange={(v) => setForm({ ...form, sender_name: v })} />
         <Field label="Your email (sender)" value={form.sender_email} onChange={(v) => setForm({ ...form, sender_email: v })} />
@@ -320,7 +195,7 @@ function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => 
         <Field label="Gmail OAuth Client Secret" value={gmailClientSecret} onChange={setGmailClientSecret} type="password" />
         <Field label="Google API Key (search)" value={googleApiKey} onChange={setGoogleApiKey} />
         <small style={{ opacity: 0.7 }}>
-          We never write keys to disk. They are stored in macOS Keychain / Windows Credential Manager via Keytar.
+          Keys are stored in macOS Keychain / Windows Credential Manager via Keytar.
         </small>
       </Section>
 
@@ -334,25 +209,9 @@ function Setup({ initial, onDone }: { initial: Partial<Settings>, onDone: () => 
   )
 }
 
-/* -------------------------------- small helpers -------------------------------- */
-
-const inputStyle: React.CSSProperties = {
-  padding: 10,
-  borderRadius: 8,
-  border: '1px solid #333',
-  background: '#1b1b1b',
-  color: 'white',
-  outline: 'none',
-}
-
 function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ padding: 24, fontFamily: 'ui-sans-serif, system-ui', color: 'white', background: '#111', minHeight: '100vh' }}>
-      {children}
-    </div>
-  )
+  return <div style={{ padding: 24, fontFamily: 'ui-sans-serif, system-ui', color: 'white', background: '#111', minHeight: '100vh' }}>{children}</div>
 }
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginTop: 16 }}>
@@ -361,18 +220,52 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </div>
   )
 }
-
-function Field({ label, value, onChange, type = 'text' }:{
-  label: string; value: string; onChange:(v: string)=>void; type?: string
+function Field({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  type?: string
+  placeholder?: string
 }) {
   return (
-    <label style={{ display: 'grid', gap: 6 }}>
+    <label style={{ display: 'grid', gap: 4 }}>
       <span style={{ fontSize: 12, opacity: 0.8 }}>{label}</span>
       <input
         type={type}
         value={value}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        style={inputStyle}
+        style={{ padding: 8, borderRadius: 6, border: '1px solid #444', background: '#222', color: 'white' }}
+      />
+    </label>
+  )
+}
+function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  return (
+    <label style={{ display: 'grid', gap: 4 }}>
+      <span style={{ fontSize: 12, opacity: 0.8 }}>{label}</span>
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        rows={6}
+        style={{ padding: 8, borderRadius: 6, border: '1px solid #444', background: '#222', color: 'white', resize: 'vertical' }}
       />
     </label>
   )

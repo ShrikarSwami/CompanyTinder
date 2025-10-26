@@ -8,13 +8,14 @@ const electron_1 = require("electron");
 const node_http_1 = require("node:http");
 const node_crypto_1 = require("node:crypto");
 const node_path_1 = require("node:path");
+// NOTE: value import + separate type import = no TS2709 error
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const keytar_1 = __importDefault(require("keytar"));
 const open_1 = __importDefault(require("open"));
 const get_port_1 = __importDefault(require("get-port"));
 const googleapis_1 = require("googleapis");
 let win = null;
-let db; // instance type from better-sqlite3
+let db;
 const SERVICE = 'CompanyTinder';
 const TOKENS_KEY = 'GMAIL_TOKENS'; // stored in keychain as JSON
 /* ---------------------- DB init ---------------------- */
@@ -35,10 +36,10 @@ function initDB() {
     );
     INSERT OR IGNORE INTO settings(id) VALUES (1);
 
-    -- record each successful Gmail send
+    -- record each successful Gmail send (message id + timestamp)
     CREATE TABLE IF NOT EXISTS sends(
-      id TEXT,      -- Gmail message id
-      ts INTEGER    -- unix ms timestamp
+      id TEXT,
+      ts INTEGER
     );
   `);
 }
@@ -52,8 +53,8 @@ function sentCountToday() {
     const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since);
     return row?.n ?? 0;
 }
-function bumpSentCounter(id) {
-    db.prepare('INSERT INTO sends(id, ts) VALUES (?, ?)').run(id, Date.now());
+function recordSend(id) {
+    db.prepare('INSERT INTO sends (id, ts) VALUES (?, ?)').run(id, Date.now());
 }
 /* ---------------------- Window ---------------------- */
 async function createWindow() {
@@ -66,15 +67,13 @@ async function createWindow() {
             nodeIntegration: false,
         },
     });
-    // DevTools during dev
     win.webContents.openDevTools({ mode: 'detach' });
-    // in createWindow()
     const devUrl = process.env.VITE_DEV_SERVER_URL;
     if (devUrl) {
         await win.loadURL(devUrl);
     }
     else {
-        // point to Vite’s prod output
+        // Vite production build path
         await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
     }
 }
@@ -125,7 +124,6 @@ function buildRawEmail({ from, to, subject, text, bcc, }) {
         '',
         text || '',
     ].filter(Boolean);
-    // Gmail requires base64url (not standard base64)
     return Buffer.from(lines.join('\r\n')).toString('base64url');
 }
 /* ---------------------- IPC: Gmail status/connect ------------------------- */
@@ -246,8 +244,8 @@ electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
             requestBody: { raw: rawMime },
         });
         // 5) record + return
-        const id = sendRes.data.id || '';
-        bumpSentCounter(id);
+        const id = sendRes.data.id || (0, node_crypto_1.randomUUID)();
+        recordSend(id);
         return { ok: true, id, remaining: Math.max(0, cap - (used + 1)), cap };
     }
     catch (err) {
@@ -255,6 +253,7 @@ electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
         return { ok: false, error: String(err?.message || err) };
     }
 });
+/* ---------------------- Quota ---------------------- */
 electron_1.ipcMain.handle('gmail:quota', () => {
     const s = db.prepare('SELECT daily_cap FROM settings WHERE id=1').get();
     const cap = Number(s?.daily_cap ?? 25);
