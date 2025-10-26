@@ -73,7 +73,7 @@ async function createWindow() {
         await win.loadURL(devUrl);
     }
     else {
-        await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
+        await win.loadFile((0, node_path_1.join)(process.cwd(), "dist", "index.html"));
     }
 }
 /* ---------------------- Settings (SQLite) ---------------------- */

@@ -87,7 +87,7 @@ async function createWindow() {
   if (devUrl) {
     await win.loadURL(devUrl)
   } else {
-    await win.loadFile(join(process.cwd(), 'dist', 'index.html'))
+    await win.loadFile(join(process.cwd(), "dist", "index.html"))
   }
 }
 

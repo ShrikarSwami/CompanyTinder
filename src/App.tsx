@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react'
 import type { Settings } from './types'
 
 type Quota = { used: number; cap: number; remaining: number }
+type SendOk = { ok: true; id: string; remaining?: number; cap?: number }
+type SendErr = { ok: false; error?: string }
+type SendResult = SendOk | SendErr
 
 export default function App() {
   const [step, setStep] = useState<'welcome' | 'setup' | 'finder'>('welcome')
@@ -15,7 +18,9 @@ export default function App() {
     setHasApi(!!api)
     if (!api) return
 
-    api.getSettings().then(setSettings).catch((e) => console.error('[getSettings]', e))
+    api.getSettings().then(setSettings).catch((e: unknown) => {
+      console.error('[getSettings]', e)
+    })
     api.gmailQuota().then(setQuota).catch(() => {})
   }, [])
 
@@ -35,8 +40,7 @@ export default function App() {
 
         {!hasApi && (
           <div style={{ marginTop: 12, color: '#f59e0b' }}>
-            ⚠️ Preload bridge (window.api) not detected yet. You can still open Setup; data won’t
-            persist until preload is available.
+            ⚠️ Preload bridge (window.api) not detected yet. You can still open Setup; data won’t persist until preload is available.
           </div>
         )}
 
@@ -75,28 +79,14 @@ function QuotaBar({ quota }: { quota: Quota | null }) {
   const pct = quota.cap ? Math.min(100, Math.round((quota.used / quota.cap) * 100)) : 0
   return (
     <div style={{ margin: '12px 0 20px 0' }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          fontSize: 12,
-          opacity: 0.8,
-          marginBottom: 4,
-        }}
-      >
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
         <span>Daily quota</span>
         <span>
           {quota.used}/{quota.cap} used (left {quota.remaining})
         </span>
       </div>
       <div style={{ height: 8, background: '#333', borderRadius: 6, overflow: 'hidden' }}>
-        <div
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            background: pct > 90 ? '#ef4444' : '#22c55e',
-          }}
-        />
+        <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? '#ef4444' : '#22c55e' }} />
       </div>
     </div>
   )
@@ -115,20 +105,19 @@ function ComposeCard({ onSent }: { onSent: () => void }) {
       setSending(true)
       setStatus('Sending…')
       const s = await window.api.getSettings()
-      const res = await window.api.gmailSend({
-      to: to || s.sender_email,
-      subject: subject || 'CompanyTinder test ✅',
-      text: body || 'Hello from CompanyTinder!',
-      bcc: withBcc ? s.bcc_list || '' : '',
-    })
+      const res = (await window.api.gmailSend({
+        to: to || s.sender_email, // allow testing to self
+        subject: subject || 'CompanyTinder test ✅',
+        text: body || 'Hello from CompanyTinder!',
+        bcc: withBcc ? (s.bcc_list || '') : '',
+      })) as SendResult
 
-    if (res.ok) {
-      setStatus(`Sent! Gmail ID: ${res.id}`)
-      onSent()
-    } else {
-      setStatus(res.error ?? 'Failed to send.')
-    }
-
+      if (res.ok) {
+        setStatus(`Sent! Gmail ID: ${res.id}`)
+        onSent()
+      } else {
+        setStatus(res.error ?? 'Failed to send.')
+      }
     } catch (e: unknown) {
       console.error(e)
       setStatus('Error. See console.')
@@ -231,19 +220,9 @@ function Setup({ initial, onDone }: { initial: Partial<Settings>; onDone: () => 
   )
 }
 
-/* ---------------- styled minis ---------------- */
-
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        padding: 24,
-        fontFamily: 'ui-sans-serif, system-ui',
-        color: 'white',
-        background: '#111',
-        minHeight: '100vh',
-      }}
-    >
+    <div style={{ padding: 24, fontFamily: 'ui-sans-serif, system-ui', color: 'white', background: '#111', minHeight: '100vh' }}>
       {children}
     </div>
   )
@@ -304,14 +283,7 @@ function TextArea({
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         rows={6}
-        style={{
-          padding: 8,
-          borderRadius: 6,
-          border: '1px solid #444',
-          background: '#222',
-          color: 'white',
-          resize: 'vertical',
-        }}
+        style={{ padding: 8, borderRadius: 6, border: '1px solid #444', background: '#222', color: 'white', resize: 'vertical' }}
       />
     </label>
   )
