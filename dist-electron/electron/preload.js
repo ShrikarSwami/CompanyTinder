@@ -12,4 +12,6 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     gmailStatus: () => electron_1.ipcRenderer.invoke('gmail:status'),
     gmailConnect: () => electron_1.ipcRenderer.invoke('gmail:connect'),
     gmailSend: (payload) => electron_1.ipcRenderer.invoke('gmail:send', payload),
+    gmailSend: (payload) => electron_1.ipcRenderer.invoke('gmail:send', payload),
+    gmailQuota: () => electron_1.ipcRenderer.invoke('gmail:quota'),
 });
