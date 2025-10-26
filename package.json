@@ -14,7 +14,7 @@
     "start:prod": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder -m",
-    "postinstall": "electron-builder install-app-deps"
+    "dist:win": "electron-builder -w"
   },
   "build": {
     "appId": "com.companytinder.app",
@@ -56,10 +56,10 @@
     "concurrently": "^9.2.1",
     "electron": "^38.4.0",
     "electron-builder": "^24.13.3",
-    "prebuild-install": "^7.1.2",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "wait-on": "^9.0.1"
-  }
+  },
+  "postinstall": "electron-builder install-app-deps"
 }

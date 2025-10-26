@@ -16,4 +16,3 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     gmailSend: (payload) => electron_1.ipcRenderer.invoke('gmail:send', payload),
     gmailQuota: () => electron_1.ipcRenderer.invoke('gmail:quota'),
 });
-//# sourceMappingURL=preload.js.map

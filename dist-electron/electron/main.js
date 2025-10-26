@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// electron/main.ts
 const electron_1 = require("electron");
 const node_http_1 = require("node:http");
 const node_crypto_1 = require("node:crypto");
@@ -17,7 +16,7 @@ let win = null;
 let db;
 const SERVICE = 'CompanyTinder';
 const TOKENS_KEY = 'GMAIL_TOKENS';
-/* ---------- DB ---------- */
+/* ---------------- DB ---------------- */
 function initDB() {
     const userData = electron_1.app.getPath('userData');
     db = new better_sqlite3_1.default((0, node_path_1.join)(userData, 'app.db'));
@@ -42,37 +41,29 @@ function initDB() {
   `);
 }
 function startOfLocalDayMs() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
-function sentCountToday() {
-    const since = startOfLocalDayMs();
-    const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since);
-    return row?.n ?? 0;
-}
-function recordSend(id) {
-    db.prepare('INSERT INTO sends (id, ts) VALUES (?, ?)').run(id, Date.now());
-}
-/* ---------- Window ---------- */
+function sentCountToday() { return db.prepare('SELECT COUNT(*) n FROM sends WHERE ts >= ?').get(startOfLocalDayMs())?.n ?? 0; }
+function recordSend(id) { db.prepare('INSERT INTO sends(id, ts) VALUES(?, ?)').run(id, Date.now()); }
+/* -------------- Window -------------- */
 async function createWindow() {
     win = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
         webPreferences: {
-            preload: (0, node_path_1.join)(__dirname, 'preload.js'), // compiled to dist-electron/electron/preload.js
+            preload: (0, node_path_1.join)(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false
-        },
+        }
     });
-    // DevTools in a separate window is fine
     win.webContents.openDevTools({ mode: 'detach' });
     const devUrl = process.env.VITE_DEV_SERVER_URL;
     if (devUrl) {
         await win.loadURL(devUrl);
     }
     else {
-        // IMPORTANT: dist/index.html (no “dists”, no extra folders)
         await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
     }
 }
-/* ---------- Settings ---------- */
+/* -------- Settings IPC (SQLite) ----- */
 electron_1.ipcMain.handle('settings:get', () => {
     return db.prepare('SELECT * FROM settings WHERE id=1').get();
 });
@@ -90,7 +81,7 @@ electron_1.ipcMain.handle('settings:update', (_e, payload) => {
   `).run(payload);
     return { ok: true };
 });
-/* ---------- Secrets ---------- */
+/* --------- Secrets IPC (keytar) ----- */
 electron_1.ipcMain.handle('secrets:set', async (_e, { key, value }) => {
     await keytar_1.default.setPassword(SERVICE, key, value);
     return { ok: true };
@@ -99,7 +90,7 @@ electron_1.ipcMain.handle('secrets:get', async (_e, key) => {
     const v = await keytar_1.default.getPassword(SERVICE, key);
     return v || null;
 });
-/* ---------- Gmail helpers ---------- */
+/* -------------- Gmail helpers -------------- */
 function newOAuth2(clientId, clientSecret, redirectUri) {
     return new googleapis_1.google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
@@ -108,7 +99,7 @@ async function fetchGmailProfile(oauth2) {
     const res = await gmail.users.getProfile({ userId: 'me' });
     return res.data.emailAddress ?? undefined;
 }
-function buildRawEmail({ from, to, subject, text, bcc, }) {
+function buildRawEmail({ from, to, subject, text, bcc }) {
     const lines = [
         `From: ${from}`,
         `To: ${to}`,
@@ -117,11 +108,11 @@ function buildRawEmail({ from, to, subject, text, bcc, }) {
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset="UTF-8"',
         '',
-        text || '',
+        text || ''
     ].filter(Boolean);
     return Buffer.from(lines.join('\r\n')).toString('base64url');
 }
-/* ---------- Gmail status/connect ---------- */
+/* -------- Gmail: status/connect -------- */
 electron_1.ipcMain.handle('gmail:status', async () => {
     try {
         const raw = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
@@ -136,7 +127,6 @@ electron_1.ipcMain.handle('gmail:status', async () => {
         return { connected: true, email: email ?? undefined };
     }
     catch (err) {
-        console.warn('[gmail:status] failed:', err?.message || err);
         return { connected: false, error: String(err?.message || err) };
     }
 });
@@ -148,13 +138,13 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
     const port = await (0, get_port_1.default)();
     const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
     const oauth2 = newOAuth2(clientId, clientSecret, redirectUri);
+    const state = (0, node_crypto_1.randomUUID)();
     const scopes = [
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/gmail.compose',
         'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.email'
     ];
-    const state = (0, node_crypto_1.randomUUID)();
     const authUrl = oauth2.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: scopes, state });
     const result = await new Promise((resolve, reject) => {
         const server = (0, node_http_1.createServer)(async (req, res) => {
@@ -170,13 +160,10 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
                     const { tokens } = await oauth2.getToken(code);
                     oauth2.setCredentials(tokens);
                     await keytar_1.default.setPassword(SERVICE, TOKENS_KEY, JSON.stringify(tokens));
-                    const email = (await fetchGmailProfile(oauth2)) ?? undefined;
+                    const email = await fetchGmailProfile(oauth2);
                     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-                    res.end(`<html><body style="font-family: ui-sans-serif; padding: 24px">
-            <h2>✅ Gmail connected</h2>
-            <p>You can close this window and return to CompanyTinder.</p>
-          </body></html>`);
-                    resolve({ ok: true, email });
+                    res.end('<html><body style="font-family: ui-sans-serif; padding: 24px"><h2>✅ Gmail connected</h2><p>You can close this window and return to CompanyTinder.</p></body></html>');
+                    resolve({ ok: true, email: email ?? undefined });
                     setTimeout(() => server.close(), 100);
                 }
                 else {
@@ -185,43 +172,36 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
                 }
             }
             catch (err) {
-                console.error('[gmail:connect] callback error:', err);
                 res.writeHead(500, { 'Content-Type': 'text/plain' });
                 res.end('OAuth failed. Check CompanyTinder console.');
                 reject(err);
             }
         });
         server.listen(port, () => {
-            (0, open_1.default)(authUrl).catch((e) => { console.error('Failed to open browser:', e); electron_1.shell.openExternal(authUrl).catch(() => { }); });
+            (0, open_1.default)(authUrl).catch(() => electron_1.shell.openExternal(authUrl).catch(() => { }));
         });
     });
     return result;
 });
-/* ---------- Gmail send + quota ---------- */
+/* -------- Gmail: send + quota -------- */
 electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
     try {
         const s = db.prepare('SELECT * FROM settings WHERE id=1').get();
         if (!s || !s.sender_email)
-            return { ok: false, error: 'Sender email not set. Open Setup and save your profile.' };
+            return { ok: false, error: 'Sender email not set. Open Setup and save your profile first.' };
         const cap = Number(s.daily_cap ?? 25);
         const used = sentCountToday();
         if (used >= cap)
             return { ok: false, error: `Daily cap reached (${used}/${cap}). Try again tomorrow.` };
-        const rawTokens = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
-        if (!rawTokens)
+        const raw = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
+        if (!raw)
             return { ok: false, error: 'Not connected to Gmail yet.' };
-        const tokens = JSON.parse(rawTokens);
+        const tokens = JSON.parse(raw);
         const clientId = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID')) ?? '';
         const clientSecret = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')) ?? '';
         const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1');
         oauth2.setCredentials(tokens);
-        const rawMime = buildRawEmail({
-            from: s.sender_email,
-            to: payload.to,
-            subject: payload.subject,
-            text: payload.text,
-            bcc: payload.bcc,
-        });
+        const rawMime = buildRawEmail({ from: s.sender_email, to: payload.to, subject: payload.subject, text: payload.text, bcc: payload.bcc });
         const gmail = googleapis_1.google.gmail({ version: 'v1', auth: oauth2 });
         const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw: rawMime } });
         const id = sendRes.data.id || (0, node_crypto_1.randomUUID)();
@@ -229,7 +209,6 @@ electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
         return { ok: true, id, remaining: Math.max(0, cap - (used + 1)), cap };
     }
     catch (err) {
-        console.error('[gmail:send] error:', err);
         return { ok: false, error: String(err?.message || err) };
     }
 });
@@ -239,10 +218,9 @@ electron_1.ipcMain.handle('gmail:quota', () => {
     const used = sentCountToday();
     return { used, cap, remaining: Math.max(0, cap - used) };
 });
-/* ---------- App lifecycle ---------- */
+/* ---------- lifecycle ---------- */
 electron_1.app.whenReady().then(() => { initDB(); createWindow(); });
 electron_1.app.on('window-all-closed', () => { if (process.platform !== 'darwin')
     electron_1.app.quit(); });
 electron_1.app.on('activate', () => { if (electron_1.BrowserWindow.getAllWindows().length === 0)
     createWindow(); });
-//# sourceMappingURL=main.js.map
