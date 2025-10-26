@@ -165,3 +165,52 @@ function Field({ label, value, onChange, type = 'text' }:{
     </label>
   )
 }
+
+import React, { useState } from 'react'
+
+export default function App() {
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState('')
+
+  const sendTest = async () => {
+    setSending(true)
+    setStatus('Sending...')
+    try {
+      const s = await window.api.getSettings()
+      const res = await window.api.gmailSend({
+        to: s.sender_email,
+        subject: "CompanyTinder test ✅",
+        text: "Hello from CompanyTinder — this was sent through the app!",
+        bcc: s.bcc_list || ""
+      })
+      setStatus(`Sent! Gmail ID: ${res.id}`)
+    } catch (err) {
+      setStatus('Error sending email. Check console.')
+      console.error(err)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: 30, color: 'white', fontFamily: 'sans-serif' }}>
+      <h1>📬 CompanyTinder</h1>
+      <p>Send a test Gmail message through the app.</p>
+      <button
+        onClick={sendTest}
+        disabled={sending}
+        style={{
+          background: sending ? '#888' : '#0078ff',
+          border: 'none',
+          color: 'white',
+          padding: '10px 16px',
+          borderRadius: 8,
+          cursor: 'pointer'
+        }}
+      >
+        {sending ? 'Sending…' : 'Send Test Email'}
+      </button>
+      <p style={{ marginTop: 12 }}>{status}</p>
+    </div>
+  )
+}

@@ -215,3 +215,58 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+
+  // --- Gmail helpers (below newOAuth2 / fetchGmailProfile) ---
+async function getAuthedGmail() {
+  const clientId = await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_ID')
+  const clientSecret = await keytar.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')
+  const rawTokens = await keytar.getPassword(SERVICE, TOKENS_KEY)
+
+  if (!clientId || !clientSecret || !rawTokens) {
+    throw new Error('Missing Gmail credentials/tokens. Connect Gmail first.')
+  }
+
+  const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1')
+  oauth2.setCredentials(JSON.parse(rawTokens))
+  const gmail = google.gmail({ version: 'v1', auth: oauth2 })
+  return { gmail }
+}
+
+function toBase64Url(input: string) {
+  return Buffer.from(input)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+}
+
+// Compose + send a plain-text email (optionally with BCC)
+ipcMain.handle('gmail:send', async (_e, payload: {
+  to: string
+  subject: string
+  text: string
+  bcc?: string
+}) => {
+  const { to, subject, text, bcc } = payload
+  if (!to || !subject) throw new Error('Missing "to" or "subject"')
+
+  const { gmail } = await getAuthedGmail()
+
+  const headers = [
+    `To: ${to}`,
+    bcc ? `Bcc: ${bcc}` : null,
+    `Subject: ${subject}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    '', // blank line before body
+    text || ''
+  ].filter(Boolean).join('\r\n')
+
+  const raw = toBase64Url(headers)
+
+  const res = await gmail.users!.messages!.send({
+    userId: 'me',
+    requestBody: { raw }
+  })
+
+  return { ok: true, id: res.data.id || null }
+})

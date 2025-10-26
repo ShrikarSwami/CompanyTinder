@@ -188,3 +188,44 @@ electron_1.app.on('window-all-closed', () => { if (process.platform !== 'darwin'
     electron_1.app.quit(); });
 electron_1.app.on('activate', () => { if (electron_1.BrowserWindow.getAllWindows().length === 0)
     createWindow(); });
+// --- Gmail helpers (below newOAuth2 / fetchGmailProfile) ---
+async function getAuthedGmail() {
+    const clientId = await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID');
+    const clientSecret = await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET');
+    const rawTokens = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
+    if (!clientId || !clientSecret || !rawTokens) {
+        throw new Error('Missing Gmail credentials/tokens. Connect Gmail first.');
+    }
+    const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1');
+    oauth2.setCredentials(JSON.parse(rawTokens));
+    const gmail = googleapis_1.google.gmail({ version: 'v1', auth: oauth2 });
+    return { gmail };
+}
+function toBase64Url(input) {
+    return Buffer.from(input)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+}
+// Compose + send a plain-text email (optionally with BCC)
+electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
+    const { to, subject, text, bcc } = payload;
+    if (!to || !subject)
+        throw new Error('Missing "to" or "subject"');
+    const { gmail } = await getAuthedGmail();
+    const headers = [
+        `To: ${to}`,
+        bcc ? `Bcc: ${bcc}` : null,
+        `Subject: ${subject}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        '', // blank line before body
+        text || ''
+    ].filter(Boolean).join('\r\n');
+    const raw = toBase64Url(headers);
+    const res = await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: { raw }
+    });
+    return { ok: true, id: res.data.id || null };
+});
