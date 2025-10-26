@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import keytar from 'keytar'
 import open from 'open'
-import getPort from 'get-port'
 import { google } from 'googleapis'
 
 // Initialize the database and the window
