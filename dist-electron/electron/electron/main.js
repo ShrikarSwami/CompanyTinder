@@ -56,21 +56,20 @@ async function createWindow() {
         width: 1200,
         height: 800,
         webPreferences: {
-            // NOTE: in prod, __dirname === dist-electron/electron
-            preload: (0, node_path_1.join)(__dirname, 'preload.js'),
+            preload: (0, node_path_1.join)(__dirname, 'preload.js'), // compiled to dist-electron/electron/preload.js
             contextIsolation: true,
-            nodeIntegration: false,
+            nodeIntegration: false
         },
     });
+    // DevTools in a separate window is fine
     win.webContents.openDevTools({ mode: 'detach' });
     const devUrl = process.env.VITE_DEV_SERVER_URL;
     if (devUrl) {
         await win.loadURL(devUrl);
     }
     else {
-        const indexHtml = (0, node_path_1.join)(process.cwd(), 'dist', 'index.html');
-        console.log('[main] loading:', indexHtml); // <- sanity log
-        await win.loadFile(indexHtml);
+        // IMPORTANT: dist/index.html (no “dists”, no extra folders)
+        await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
     }
 }
 /* ---------- Settings ---------- */
@@ -246,3 +245,4 @@ electron_1.app.on('window-all-closed', () => { if (process.platform !== 'darwin'
     electron_1.app.quit(); });
 electron_1.app.on('activate', () => { if (electron_1.BrowserWindow.getAllWindows().length === 0)
     createWindow(); });
+//# sourceMappingURL=main.js.map

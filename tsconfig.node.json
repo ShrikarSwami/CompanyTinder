@@ -3,15 +3,17 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "outDir": "dist-electron",
-    "rootDir": ".",
+    "lib": ["ES2022"],
+    "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "types": ["node"],
-    "lib": ["ES2022", "DOM"]
+    "sourceMap": true,
+
+    /* IMPORTANT: where Electron will look for the compiled files */
+    "outDir": "dist-electron/electron",
+    "rootDir": "."
   },
   "include": ["electron/**/*.ts"],
-  "exclude": ["src", "dist", "dist-electron", "node_modules"]
+  "exclude": ["node_modules", "dist", "dist-electron"]
 }

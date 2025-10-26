@@ -4,15 +4,14 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src *;"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src *;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- IMPORTANT for Electron packaged mode -->
-    <base href="./" />
     <title>CompanyTinder</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- Vite will replace this with ./assets/index-*.js on build -->
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

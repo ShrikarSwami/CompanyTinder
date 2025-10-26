@@ -1,9 +1,13 @@
+// vite.config.ts
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// IMPORTANT: base:'./' makes Vite emit relative asset URLs so file:// works.
 export default defineConfig({
   plugins: [react()],
-  server: {
-    port: 5173, // ok to change later if you want
+  base: './',
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
   },
 })

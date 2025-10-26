@@ -6,7 +6,6 @@
   "author": "Shrikar Swami",
   "type": "commonjs",
   "main": "dist-electron/electron/main.js",
-
   "scripts": {
     "dev": "concurrently -k -n main,renderer,electron \"tsc -w -p tsconfig.node.json\" \"vite\" \"wait-on tcp:5173 && electron .\"",
     "build:main": "tsc -p tsconfig.node.json",
@@ -14,9 +13,9 @@
     "build": "rimraf dist-electron dist && pnpm build:main && pnpm build:renderer",
     "start:prod": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder -m"
+    "dist": "electron-builder -m",
+    "postinstall": "electron-builder install-app-deps"
   },
-
   "build": {
     "appId": "com.companytinder.app",
     "productName": "CompanyTinder",
@@ -30,11 +29,13 @@
       "target": "dmg",
       "category": "public.app-category.productivity"
     },
+    "win": {
+      "target": "nsis"
+    },
     "directories": {
       "buildResources": "build"
     }
   },
-
   "dependencies": {
     "better-sqlite3": "^12.4.1",
     "dotenv": "^16.4.5",
@@ -45,7 +46,6 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
-
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "@types/better-sqlite3": "^7.6.13",
@@ -56,6 +56,7 @@
     "concurrently": "^9.2.1",
     "electron": "^38.4.0",
     "electron-builder": "^24.13.3",
+    "prebuild-install": "^7.1.2",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
