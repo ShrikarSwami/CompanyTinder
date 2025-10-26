@@ -8,7 +8,6 @@ const electron_1 = require("electron");
 const node_http_1 = require("node:http");
 const node_crypto_1 = require("node:crypto");
 const node_path_1 = require("node:path");
-// value import + separate type import (avoids TS2709)
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const keytar_1 = __importDefault(require("keytar"));
 const open_1 = __importDefault(require("open"));
@@ -17,8 +16,8 @@ const googleapis_1 = require("googleapis");
 let win = null;
 let db;
 const SERVICE = 'CompanyTinder';
-const TOKENS_KEY = 'GMAIL_TOKENS'; // stored in keychain as JSON
-/* ---------------------- DB init ---------------------- */
+const TOKENS_KEY = 'GMAIL_TOKENS';
+/* ---------- DB ---------- */
 function initDB() {
     const userData = electron_1.app.getPath('userData');
     db = new better_sqlite3_1.default((0, node_path_1.join)(userData, 'app.db'));
@@ -36,18 +35,13 @@ function initDB() {
     );
     INSERT OR IGNORE INTO settings(id) VALUES (1);
 
-    -- record each successful Gmail send (message id + timestamp)
     CREATE TABLE IF NOT EXISTS sends(
       id TEXT,
       ts INTEGER
     );
   `);
 }
-function startOfLocalDayMs() {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-}
+function startOfLocalDayMs() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function sentCountToday() {
     const since = startOfLocalDayMs();
     const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since);
@@ -56,12 +50,13 @@ function sentCountToday() {
 function recordSend(id) {
     db.prepare('INSERT INTO sends (id, ts) VALUES (?, ?)').run(id, Date.now());
 }
-/* ---------------------- Window ---------------------- */
+/* ---------- Window ---------- */
 async function createWindow() {
     win = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
         webPreferences: {
+            // NOTE: in prod, __dirname === dist-electron/electron
             preload: (0, node_path_1.join)(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
@@ -73,11 +68,12 @@ async function createWindow() {
         await win.loadURL(devUrl);
     }
     else {
-        // ✅ make sure this is EXACTLY "dist/index.html"
-        await win.loadFile((0, node_path_1.join)(process.cwd(), 'dist', 'index.html'));
+        const indexHtml = (0, node_path_1.join)(process.cwd(), 'dist', 'index.html');
+        console.log('[main] loading:', indexHtml); // <- sanity log
+        await win.loadFile(indexHtml);
     }
 }
-/* ---------------------- Settings (SQLite) ---------------------- */
+/* ---------- Settings ---------- */
 electron_1.ipcMain.handle('settings:get', () => {
     return db.prepare('SELECT * FROM settings WHERE id=1').get();
 });
@@ -95,7 +91,7 @@ electron_1.ipcMain.handle('settings:update', (_e, payload) => {
   `).run(payload);
     return { ok: true };
 });
-/* ---------------------- Secrets (Keytar) ----------------------- */
+/* ---------- Secrets ---------- */
 electron_1.ipcMain.handle('secrets:set', async (_e, { key, value }) => {
     await keytar_1.default.setPassword(SERVICE, key, value);
     return { ok: true };
@@ -104,7 +100,7 @@ electron_1.ipcMain.handle('secrets:get', async (_e, key) => {
     const v = await keytar_1.default.getPassword(SERVICE, key);
     return v || null;
 });
-/* ---------------------- Gmail helpers ------------------------- */
+/* ---------- Gmail helpers ---------- */
 function newOAuth2(clientId, clientSecret, redirectUri) {
     return new googleapis_1.google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
@@ -113,7 +109,7 @@ async function fetchGmailProfile(oauth2) {
     const res = await gmail.users.getProfile({ userId: 'me' });
     return res.data.emailAddress ?? undefined;
 }
-function buildRawEmail({ from, to, subject, text, bcc }) {
+function buildRawEmail({ from, to, subject, text, bcc, }) {
     const lines = [
         `From: ${from}`,
         `To: ${to}`,
@@ -122,11 +118,11 @@ function buildRawEmail({ from, to, subject, text, bcc }) {
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset="UTF-8"',
         '',
-        text || ''
+        text || '',
     ].filter(Boolean);
     return Buffer.from(lines.join('\r\n')).toString('base64url');
 }
-/* ---------------------- IPC: Gmail status/connect ------------------------- */
+/* ---------- Gmail status/connect ---------- */
 electron_1.ipcMain.handle('gmail:status', async () => {
     try {
         const raw = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
@@ -135,7 +131,7 @@ electron_1.ipcMain.handle('gmail:status', async () => {
         const tokens = JSON.parse(raw);
         const clientId = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID')) ?? '';
         const clientSecret = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')) ?? '';
-        const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1'); // dummy
+        const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1');
         oauth2.setCredentials(tokens);
         const email = await fetchGmailProfile(oauth2);
         return { connected: true, email: email ?? undefined };
@@ -157,15 +153,10 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/gmail.compose',
         'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/userinfo.email'
+        'https://www.googleapis.com/auth/userinfo.email',
     ];
     const state = (0, node_crypto_1.randomUUID)();
-    const authUrl = oauth2.generateAuthUrl({
-        access_type: 'offline',
-        prompt: 'consent',
-        scope: scopes,
-        state
-    });
+    const authUrl = oauth2.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: scopes, state });
     const result = await new Promise((resolve, reject) => {
         const server = (0, node_http_1.createServer)(async (req, res) => {
             try {
@@ -202,51 +193,38 @@ electron_1.ipcMain.handle('gmail:connect', async () => {
             }
         });
         server.listen(port, () => {
-            (0, open_1.default)(authUrl).catch((e) => {
-                console.error('Failed to open browser:', e);
-                electron_1.shell.openExternal(authUrl).catch(() => { });
-            });
+            (0, open_1.default)(authUrl).catch((e) => { console.error('Failed to open browser:', e); electron_1.shell.openExternal(authUrl).catch(() => { }); });
         });
     });
     return result;
 });
-/* ---------------- Gmail: send (with cap + quota) ---------------- */
+/* ---------- Gmail send + quota ---------- */
 electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
     try {
-        // 1) Daily cap check + sender validation
         const s = db.prepare('SELECT * FROM settings WHERE id=1').get();
-        if (!s || !s.sender_email) {
-            return { ok: false, error: 'Sender email not set. Open Setup and save your profile first.' };
-        }
+        if (!s || !s.sender_email)
+            return { ok: false, error: 'Sender email not set. Open Setup and save your profile.' };
         const cap = Number(s.daily_cap ?? 25);
         const used = sentCountToday();
-        if (used >= cap) {
+        if (used >= cap)
             return { ok: false, error: `Daily cap reached (${used}/${cap}). Try again tomorrow.` };
-        }
-        // 2) Tokens & OAuth client
-        const raw = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
-        if (!raw)
+        const rawTokens = await keytar_1.default.getPassword(SERVICE, TOKENS_KEY);
+        if (!rawTokens)
             return { ok: false, error: 'Not connected to Gmail yet.' };
-        const tokens = JSON.parse(raw);
+        const tokens = JSON.parse(rawTokens);
         const clientId = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_ID')) ?? '';
         const clientSecret = (await keytar_1.default.getPassword(SERVICE, 'GMAIL_CLIENT_SECRET')) ?? '';
-        const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1'); // dummy
+        const oauth2 = newOAuth2(clientId, clientSecret, 'http://127.0.0.1');
         oauth2.setCredentials(tokens);
-        // 3) Build raw RFC 822 message
         const rawMime = buildRawEmail({
             from: s.sender_email,
             to: payload.to,
             subject: payload.subject,
             text: payload.text,
-            bcc: payload.bcc
+            bcc: payload.bcc,
         });
-        // 4) Send
         const gmail = googleapis_1.google.gmail({ version: 'v1', auth: oauth2 });
-        const sendRes = await gmail.users.messages.send({
-            userId: 'me',
-            requestBody: { raw: rawMime }
-        });
-        // 5) record + return
+        const sendRes = await gmail.users.messages.send({ userId: 'me', requestBody: { raw: rawMime } });
         const id = sendRes.data.id || (0, node_crypto_1.randomUUID)();
         recordSend(id);
         return { ok: true, id, remaining: Math.max(0, cap - (used + 1)), cap };
@@ -256,18 +234,14 @@ electron_1.ipcMain.handle('gmail:send', async (_e, payload) => {
         return { ok: false, error: String(err?.message || err) };
     }
 });
-/* ---------------------- Quota ---------------------- */
 electron_1.ipcMain.handle('gmail:quota', () => {
     const s = db.prepare('SELECT daily_cap FROM settings WHERE id=1').get();
     const cap = Number(s?.daily_cap ?? 25);
     const used = sentCountToday();
     return { used, cap, remaining: Math.max(0, cap - used) };
 });
-/* ---------------------- App lifecycle ---------------------- */
-electron_1.app.whenReady().then(() => {
-    initDB();
-    createWindow();
-});
+/* ---------- App lifecycle ---------- */
+electron_1.app.whenReady().then(() => { initDB(); createWindow(); });
 electron_1.app.on('window-all-closed', () => { if (process.platform !== 'darwin')
     electron_1.app.quit(); });
 electron_1.app.on('activate', () => { if (electron_1.BrowserWindow.getAllWindows().length === 0)
