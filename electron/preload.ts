@@ -1,24 +1,56 @@
 // electron/preload.ts
 import { contextBridge, ipcRenderer } from 'electron'
 
-// Keep this single, centralized bridge. If you have any other file that calls
-// contextBridge.exposeInMainWorld('api', ...), remove it to avoid the
-// “Cannot bind an API on top of an existing property” error.
+// Keep this in sync with src/types.ts
+type Settings = {
+  sender_name: string
+  sender_email: string
+  school: string
+  program: string
+  city: string
+  bcc_list: string
+  daily_cap: number
+}
+
+// Safely expose a tiny API surface to the renderer
 contextBridge.exposeInMainWorld('api', {
-  /* Settings (SQLite) */
-  getSettings: () => ipcRenderer.invoke('settings:get'),
-  updateSettings: (payload: any) => ipcRenderer.invoke('settings:update', payload),
+  // Settings (SQLite)
+  getSettings: () =>
+    ipcRenderer.invoke('settings:get') as Promise<Settings>,
+  updateSettings: (payload: Settings) =>
+    ipcRenderer.invoke('settings:update', payload) as Promise<{ ok: true }>,
 
-  /* Secrets (Keytar) */
-  setSecret: (key: string, value: string) => ipcRenderer.invoke('secrets:set', { key, value }),
-  getSecret: (key: string) => ipcRenderer.invoke('secrets:get', key),
+  // Secrets (Keytar)
+  setSecret: (key: string, value: string) =>
+    ipcRenderer.invoke('secrets:set', { key, value }) as Promise<{ ok: true }>,
+  getSecret: (key: string) =>
+    ipcRenderer.invoke('secrets:get', key) as Promise<string | null>,
 
-  /* Gmail */
-  gmailStatus: () => ipcRenderer.invoke('gmail:status'),
-  gmailConnect: () => ipcRenderer.invoke('gmail:connect'),
+  // Gmail
+  gmailStatus: () =>
+    ipcRenderer.invoke('gmail:status') as Promise<{
+      connected: boolean
+      email?: string
+      error?: string
+    }>,
+  gmailConnect: () =>
+    ipcRenderer.invoke('gmail:connect') as Promise<{
+      ok: boolean
+      email?: string
+      error?: string
+    }>,
   gmailSend: (payload: { to: string; subject: string; text: string; bcc?: string }) =>
-    ipcRenderer.invoke('gmail:send', payload),
-
-  /* Quota / meter */
-  gmailQuota: () => ipcRenderer.invoke('gmail:quota'),
+    ipcRenderer.invoke('gmail:send', payload) as Promise<{
+      ok: boolean
+      id?: string
+      error?: string
+      remaining?: number
+      cap?: number
+    }>,
+  gmailQuota: () =>
+    ipcRenderer.invoke('gmail:quota') as Promise<{
+      used: number
+      cap: number
+      remaining: number
+    }>,
 })

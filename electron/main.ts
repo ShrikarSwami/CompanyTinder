@@ -10,7 +10,7 @@ import getPort from 'get-port'
 import { google } from 'googleapis'
 
 let win: BrowserWindow | null = null
-let db: Database.Database
+let db: Database // instance type from better-sqlite3
 
 const SERVICE = 'CompanyTinder'
 const TOKENS_KEY = 'GMAIL_TOKENS' // stored in keychain as JSON
@@ -43,7 +43,7 @@ function initDB() {
     );
     INSERT OR IGNORE INTO settings(id) VALUES (1);
 
-    -- NEW: record each successful Gmail send
+    -- record each successful Gmail send
     CREATE TABLE IF NOT EXISTS sends(
       id TEXT,      -- Gmail message id
       ts INTEGER    -- unix ms timestamp
@@ -56,10 +56,15 @@ function startOfLocalDayMs() {
   d.setHours(0, 0, 0, 0)
   return d.getTime()
 }
+
 function sentCountToday(): number {
   const since = startOfLocalDayMs()
-  const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since) as { n: number }
+  const row = db.prepare('SELECT COUNT(*) AS n FROM sends WHERE ts >= ?').get(since) as { n?: number } | undefined
   return row?.n ?? 0
+}
+
+function bumpSentCounter(id: string) {
+  db.prepare('INSERT INTO sends(id, ts) VALUES (?, ?)').run(id, Date.now())
 }
 
 /* ---------------------- Window ---------------------- */
@@ -70,17 +75,20 @@ async function createWindow() {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   })
 
+  // DevTools during dev
   win.webContents.openDevTools({ mode: 'detach' })
 
-  const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
+  // in createWindow()
+  const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {
     await win.loadURL(devUrl)
   } else {
-    await win.loadFile(join(__dirname, '../renderer/index.html'))
+    // point to Vite’s prod output
+    await win.loadFile(join(process.cwd(), 'dist', 'index.html'))
   }
 }
 
@@ -88,6 +96,7 @@ async function createWindow() {
 ipcMain.handle('settings:get', () => {
   return db.prepare<[], Settings>('SELECT * FROM settings WHERE id=1').get()
 })
+
 ipcMain.handle('settings:update', (_e, payload: Settings) => {
   db.prepare(`
     UPDATE settings SET
@@ -108,6 +117,7 @@ ipcMain.handle('secrets:set', async (_e, { key, value }: { key: string; value: s
   await keytar.setPassword(SERVICE, key, value)
   return { ok: true }
 })
+
 ipcMain.handle('secrets:get', async (_e, key: string) => {
   const v = await keytar.getPassword(SERVICE, key)
   return v || null
@@ -117,30 +127,11 @@ ipcMain.handle('secrets:get', async (_e, key: string) => {
 function newOAuth2(clientId: string, clientSecret: string, redirectUri: string) {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
 }
+
 async function fetchGmailProfile(oauth2: InstanceType<typeof google.auth.OAuth2>) {
   const gmail = google.gmail({ version: 'v1', auth: oauth2 })
   const res = await gmail.users.getProfile({ userId: 'me' })
   return res.data.emailAddress ?? undefined
-}
-function base64UrlEncode(input: string) {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
-}
-function buildRawEmail({ from, to, subject, text, bcc }: { from: string; to: string; subject: string; text: string; bcc?: string }) {
-  const headers = [
-    `From: ${from}`,
-    `To: ${to}`,
-    bcc ? `Bcc: ${bcc}` : null,
-    `Subject: ${subject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
-    '',
-    text || ''
-  ].filter(Boolean)
-  return base64UrlEncode(headers.join('\r\n'))
 }
 
 function buildRawEmail({
@@ -163,14 +154,12 @@ function buildRawEmail({
     `Subject: ${subject}`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset="UTF-8"',
-    '', // empty line between headers and body
-    text,
+    '',
+    text || '',
   ].filter(Boolean) as string[]
-
   // Gmail requires base64url (not standard base64)
   return Buffer.from(lines.join('\r\n')).toString('base64url')
 }
-
 
 /* ---------------------- IPC: Gmail status/connect ------------------------- */
 ipcMain.handle('gmail:status', async () => {
@@ -205,14 +194,14 @@ ipcMain.handle('gmail:connect', async () => {
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/gmail.compose',
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/userinfo.email'
+    'https://www.googleapis.com/auth/userinfo.email',
   ]
   const state = randomUUID()
   const authUrl = oauth2.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: scopes,
-    state
+    state,
   })
 
   const result = await new Promise<{ ok: boolean; email?: string }>((resolve, reject) => {
@@ -240,7 +229,8 @@ ipcMain.handle('gmail:connect', async () => {
           resolve({ ok: true, email })
           setTimeout(() => server.close(), 100)
         } else {
-          res.writeHead(404); res.end()
+          res.writeHead(404)
+          res.end()
         }
       } catch (err: any) {
         console.error('[gmail:connect] callback error:', err)
@@ -301,8 +291,8 @@ ipcMain.handle(
       })
 
       // 5) record + return
-      bumpSentCounter()
       const id = sendRes.data.id || ''
+      bumpSentCounter(id)
       return { ok: true, id, remaining: Math.max(0, cap - (used + 1)), cap }
     } catch (err: any) {
       console.error('[gmail:send] error:', err)
@@ -310,7 +300,6 @@ ipcMain.handle(
     }
   }
 )
-
 
 ipcMain.handle('gmail:quota', () => {
   const s = db.prepare<[], Settings>('SELECT daily_cap FROM settings WHERE id=1').get()
