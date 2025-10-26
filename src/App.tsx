@@ -235,3 +235,87 @@ function Field({
     </label>
   )
 }
+
+// put this near the bottom of App.tsx, outside the App() component:
+function ComposeCard() {
+  const [to, setTo] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [useBcc, setUseBcc] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const handleSend = async () => {
+    try {
+      setSending(true);
+      setStatus('Sending…');
+
+      const s = await window.api.getSettings();
+      const res = await window.api.gmailSend({
+        to: to.trim() || s.sender_email,     // if empty, send to yourself
+        subject: subject || 'CompanyTinder',
+        text: body || '(no message)',
+        bcc: useBcc ? (s.bcc_list || '') : ''
+      });
+
+      setStatus(`Sent! Gmail ID: ${res.id}`);
+      setBody(''); // optional: clear message after send
+    } catch (err) {
+      console.error(err);
+      setStatus('Send failed — check console');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16, padding: 12, border: '1px solid #333', borderRadius: 8 }}>
+      <h3 style={{ margin: 0, marginBottom: 8 }}>Compose</h3>
+
+      <label style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
+        <span style={{ fontSize: 12, opacity: 0.8 }}>To</span>
+        <input value={to} onChange={(e) => setTo(e.target.value)}
+               placeholder="someone@example.com"
+               style={{ padding: 8, borderRadius: 6, border: '1px solid #444', background: '#222', color: 'white' }}/>
+      </label>
+
+      <label style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
+        <span style={{ fontSize: 12, opacity: 0.8 }}>Subject</span>
+        <input value={subject} onChange={(e) => setSubject(e.target.value)}
+               placeholder="Subject"
+               style={{ padding: 8, borderRadius: 6, border: '1px solid #444', background: '#222', color: 'white' }}/>
+      </label>
+
+      <label style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
+        <span style={{ fontSize: 12, opacity: 0.8 }}>Body</span>
+        <textarea value={body} onChange={(e) => setBody(e.target.value)}
+                  rows={6}
+                  placeholder="Write your message..."
+                  style={{ padding: 8, borderRadius: 6, border: '1px solid #444', background: '#222', color: 'white' }}/>
+      </label>
+
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <input type="checkbox" checked={useBcc} onChange={(e) => setUseBcc(e.target.checked)} />
+        <span style={{ fontSize: 13 }}>Send with BCC from Settings</span>
+      </label>
+
+      <button onClick={handleSend} disabled={sending}
+              style={{ background: sending ? '#666' : '#0ea5e9', color: 'white', border: 'none',
+                       padding: '8px 12px', borderRadius: 8, cursor: sending ? 'default' : 'pointer' }}>
+        {sending ? 'Sending…' : 'Send'}
+      </button>
+
+      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.9 }}>{status}</div>
+    </div>
+  );
+}
+
+return (
+  <Shell>
+    <h2>Finder</h2>
+    <p>Setup complete. Next: add search adapter + session meter.</p>
+
+    {/* New: compose panel */}
+    <ComposeCard />
+  </Shell>
+);
