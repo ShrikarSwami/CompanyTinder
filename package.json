@@ -2,16 +2,18 @@
   "name": "companytinder",
   "version": "0.1.0",
   "private": true,
-  "type": "commonjs",
-  "main": "dist-electron/electron/main.js",
-  "scripts": {
-    "dev": "concurrently -n main,renderer,electron -c cyan,green,yellow \"pnpm:dev:main\" \"pnpm:dev:renderer\" \"pnpm:dev:electron\"",
-    "dev:main": "tsc -p tsconfig.node.json -w",
-    "dev:renderer": "vite",
-    "dev:electron": "wait-on tcp:5173 file:dist-electron/electron/main.js && electron .",
-    "build": "vite build && tsc -p tsconfig.node.json",
-    "rebuild:native": "electron-rebuild -f"
-  },
+  {
+    "main": "dist-electron/electron/main.js",
+    "type": "commonjs",
+    "scripts": {
+      "dev": "concurrently -k -n main,renderer,electron \"tsc -w -p tsconfig.node.json\" \"vite\" \"wait-on tcp:5173 && electron .\"",
+      "dev:main": "tsc -w -p tsconfig.node.json",
+      "dev:renderer": "vite",
+      "dev:electron": "wait-on tcp:5173 && electron .",
+      "build": "rimraf dist-electron && tsc -p tsconfig.node.json && vite build",
+      "start": "electron ."
+    }
+  }
   "dependencies": {
     "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",

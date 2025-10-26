@@ -1,15 +1,16 @@
 {
   "compilerOptions": {
-    "composite": true,
-    "module": "commonjs",
     "target": "ES2022",
-    "lib": ["ES2022"],
-    "moduleResolution": "node",
-    "esModuleInterop": true,           // <- important
-    "allowSyntheticDefaultImports": true,
-    "strict": true,
+    "module": "CommonJS",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "Node",
+    "outDir": "dist-electron",
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "strict": true,
+    "composite": true
   },
-  "include": ["electron", "types.d.ts"]
+  "include": ["electron/**/*.ts"]
 }
