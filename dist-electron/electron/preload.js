@@ -20,3 +20,8 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     addCompany: (payload) => electron_1.ipcRenderer.invoke('companies:add', payload),
     listCompanies: () => electron_1.ipcRenderer.invoke('companies:list'),
 });
+electron_1.contextBridge.exposeInMainWorld('api', {
+    googleSearch: (q) => electron_1.ipcRenderer.invoke('search:google', q),
+    companyAdd: (input) => electron_1.ipcRenderer.invoke('companies:add', input),
+    companyLike: (domain, v) => electron_1.ipcRenderer.invoke('companies:like', { domain, v }),
+});

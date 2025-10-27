@@ -60,3 +60,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('companies:add', payload),
   listCompanies: () => ipcRenderer.invoke('companies:list'),
 })
+
+contextBridge.exposeInMainWorld('api', {
+  googleSearch: (q: string) => ipcRenderer.invoke('search:google', q),
+  companyAdd: (input: { name: string; link: string; note?: string }) =>
+    ipcRenderer.invoke('companies:add', input),
+  companyLike: (domain: string, v: 1 | 0 | -1) =>
+    ipcRenderer.invoke('companies:like', { domain, v }),
+});

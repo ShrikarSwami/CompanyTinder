@@ -305,12 +305,43 @@ ipcMain.handle('search:google', async (_e, q: string) => {
   }
 });
 
-// electron/main.ts — add:
-ipcMain.handle('companies:like', (_e, domain: string, v: number) => {
-  const row = db.prepare(`SELECT id FROM companies WHERE domain=? ORDER BY created_at DESC LIMIT 1`).get(domain);
-  if (!row) return { ok:false, error:'Not saved yet' };
-  db.prepare(`UPDATE companies SET liked=? WHERE id=?`).run(v, (row as any).id);
-  return { ok:true };
+// LIKE: update companies.liked by domain
+ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 | -1 }) => {
+  const upd = db.prepare('UPDATE companies SET liked = ? WHERE domain = ?');
+  const res = upd.run(v, domain);
+
+  if (!res.changes) {
+    // if the row doesn't exist yet, insert a minimal shell so like is stored
+    db.prepare(`
+      INSERT INTO companies (id, name, domain, link, source, note, created_at, liked)
+      VALUES (@id, @name, @domain, '', 'manual', '', @ts, @liked)
+      ON CONFLICT(id) DO NOTHING
+    `).run({
+      id: randomUUID(),
+      name: domain,
+      domain,
+      ts: Date.now(),
+      liked: v
+    });
+  }
+
+  return { ok: true };
+});
+
+
+// like / nope toggle on a domain
+ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 | -1 }) => {
+  db.prepare(`
+    UPDATE companies
+    SET liked = @v
+    WHERE domain = @domain
+  `).run({ domain, v });
+  return { ok: true };
+});
+
+ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 | -1 }) => {
+  db.prepare(`UPDATE companies SET liked = ? WHERE domain = ?`).run(v, domain);
+  return { ok: true };
 });
 
 

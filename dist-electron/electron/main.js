@@ -284,6 +284,39 @@ electron_1.ipcMain.handle('search:google', async (_e, q) => {
         return { ok: false, error: String(e?.message || e) };
     }
 });
+// LIKE: update companies.liked by domain
+electron_1.ipcMain.handle('companies:like', (_e, { domain, v }) => {
+    const upd = db.prepare('UPDATE companies SET liked = ? WHERE domain = ?');
+    const res = upd.run(v, domain);
+    if (!res.changes) {
+        // if the row doesn't exist yet, insert a minimal shell so like is stored
+        db.prepare(`
+      INSERT INTO companies (id, name, domain, link, source, note, created_at, liked)
+      VALUES (@id, @name, @domain, '', 'manual', '', @ts, @liked)
+      ON CONFLICT(id) DO NOTHING
+    `).run({
+            id: (0, node_crypto_1.randomUUID)(),
+            name: domain,
+            domain,
+            ts: Date.now(),
+            liked: v
+        });
+    }
+    return { ok: true };
+});
+// like / nope toggle on a domain
+electron_1.ipcMain.handle('companies:like', (_e, { domain, v }) => {
+    db.prepare(`
+    UPDATE companies
+    SET liked = @v
+    WHERE domain = @domain
+  `).run({ domain, v });
+    return { ok: true };
+});
+electron_1.ipcMain.handle('companies:like', (_e, { domain, v }) => {
+    db.prepare(`UPDATE companies SET liked = ? WHERE domain = ?`).run(v, domain);
+    return { ok: true };
+});
 /* ---------- lifecycle ---------- */
 electron_1.app.whenReady().then(() => { initDB(); createWindow(); });
 electron_1.app.on('window-all-closed', () => { if (process.platform !== 'darwin')
