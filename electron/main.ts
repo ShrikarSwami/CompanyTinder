@@ -329,22 +329,6 @@ ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 
 });
 
 
-// like / nope toggle on a domain
-ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 | -1 }) => {
-  db.prepare(`
-    UPDATE companies
-    SET liked = @v
-    WHERE domain = @domain
-  `).run({ domain, v });
-  return { ok: true };
-});
-
-ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 | -1 }) => {
-  db.prepare(`UPDATE companies SET liked = ? WHERE domain = ?`).run(v, domain);
-  return { ok: true };
-});
-
-
 
 /* ---------- lifecycle ---------- */
 app.whenReady().then(() => { initDB(); createWindow() })
