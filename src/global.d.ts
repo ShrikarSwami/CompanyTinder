@@ -17,6 +17,7 @@ type Quota = { used: number; cap: number; remaining: number }
 declare global {
   interface Window {
     api: {
+      companyLike: (domain: string, v: 1|-1|0)=>Promise<{ok:boolean; error?:string}>;
       getSettings(): Promise<Settings>
       updateSettings(s: Settings): Promise<{ ok: true }>
       setSecret(key: string, value: string): Promise<{ ok: true }>

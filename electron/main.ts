@@ -305,6 +305,15 @@ ipcMain.handle('search:google', async (_e, q: string) => {
   }
 });
 
+// electron/main.ts — add:
+ipcMain.handle('companies:like', (_e, domain: string, v: number) => {
+  const row = db.prepare(`SELECT id FROM companies WHERE domain=? ORDER BY created_at DESC LIMIT 1`).get(domain);
+  if (!row) return { ok:false, error:'Not saved yet' };
+  db.prepare(`UPDATE companies SET liked=? WHERE id=?`).run(v, (row as any).id);
+  return { ok:true };
+});
+
+
 
 /* ---------- lifecycle ---------- */
 app.whenReady().then(() => { initDB(); createWindow() })
