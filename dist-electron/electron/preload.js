@@ -15,4 +15,8 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     gmailConnect: () => electron_1.ipcRenderer.invoke('gmail:connect'),
     gmailSend: (payload) => electron_1.ipcRenderer.invoke('gmail:send', payload),
     gmailQuota: () => electron_1.ipcRenderer.invoke('gmail:quota'),
+    // Google
+    searchGoogle: (q) => electron_1.ipcRenderer.invoke('search:google', q),
+    addCompany: (payload) => electron_1.ipcRenderer.invoke('companies:add', payload),
+    listCompanies: () => electron_1.ipcRenderer.invoke('companies:list'),
 });
