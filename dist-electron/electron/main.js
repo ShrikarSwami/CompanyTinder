@@ -21,7 +21,6 @@ function initDB() {
     const userData = electron_1.app.getPath('userData');
     db = new better_sqlite3_1.default((0, node_path_1.join)(userData, 'app.db'));
     db.pragma('journal_mode = WAL');
-    // settings + sends
     db.exec(`
     CREATE TABLE IF NOT EXISTS settings(
       id INTEGER PRIMARY KEY CHECK (id=1),
@@ -39,17 +38,15 @@ function initDB() {
       id TEXT,
       ts INTEGER
     );
-  `);
-    // companies — matches your code in companies:add / companies:list
-    db.exec(`
+
     CREATE TABLE IF NOT EXISTS companies(
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       domain TEXT,
       link TEXT,
       source TEXT,
-      note TEXT,
-      liked INTEGER DEFAULT 0,   -- 1=heart, -1=nope, 0=undecided
+      note TEXT,             -- stay consistent with code using "note"
+      liked INTEGER DEFAULT 0,
       created_at INTEGER
     );
   `);
@@ -302,19 +299,6 @@ electron_1.ipcMain.handle('companies:like', (_e, { domain, v }) => {
             liked: v
         });
     }
-    return { ok: true };
-});
-// like / nope toggle on a domain
-electron_1.ipcMain.handle('companies:like', (_e, { domain, v }) => {
-    db.prepare(`
-    UPDATE companies
-    SET liked = @v
-    WHERE domain = @domain
-  `).run({ domain, v });
-    return { ok: true };
-});
-electron_1.ipcMain.handle('companies:like', (_e, { domain, v }) => {
-    db.prepare(`UPDATE companies SET liked = ? WHERE domain = ?`).run(v, domain);
     return { ok: true };
 });
 /* ---------- lifecycle ---------- */

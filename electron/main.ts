@@ -29,11 +29,10 @@ type Settings = {
 
 /* ---------------- DB ---------------- */
 function initDB() {
-  const userData = app.getPath('userData')
-  db = new BetterSqlite3(join(userData, 'app.db'))
-  db.pragma('journal_mode = WAL')
+  const userData = app.getPath('userData');
+  db = new BetterSqlite3(join(userData, 'app.db'));
+  db.pragma('journal_mode = WAL');
 
-  // settings + sends
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings(
       id INTEGER PRIMARY KEY CHECK (id=1),
@@ -51,22 +50,20 @@ function initDB() {
       id TEXT,
       ts INTEGER
     );
-  `)
 
-  // companies — matches your code in companies:add / companies:list
-  db.exec(`
     CREATE TABLE IF NOT EXISTS companies(
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       domain TEXT,
       link TEXT,
       source TEXT,
-      note TEXT,
-      liked INTEGER DEFAULT 0,   -- 1=heart, -1=nope, 0=undecided
+      note TEXT,             -- stay consistent with code using "note"
+      liked INTEGER DEFAULT 0,
       created_at INTEGER
     );
-  `)
+  `);
 }
+
 
 
 function startOfLocalDayMs() { const d = new Date(); d.setHours(0,0,0,0); return d.getTime() }
@@ -327,8 +324,6 @@ ipcMain.handle('companies:like', (_e, { domain, v }: { domain: string; v: 1 | 0 
 
   return { ok: true };
 });
-
-
 
 /* ---------- lifecycle ---------- */
 app.whenReady().then(() => { initDB(); createWindow() })
